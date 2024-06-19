@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: MIT
 
 from .errors import *
-from .model import *
 from .item import *
+from .model import *
 
 __version__ = "0.0.1"

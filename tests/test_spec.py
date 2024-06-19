@@ -1,420 +1,364 @@
-from typing import Annotated, Optional
-import unittest
+from typing import Annotated, Any
+
+import pytest
+
 import spec
 
-class Simple(spec.Model):
+
+# ================================
+class Simple1(spec.Model):
     a: int
     b: str
 
-class OtherSimple(spec.Model):
+
+class Simple2(spec.Model):
     c: int
 
-class TestSimple(unittest.TestCase):
-    INPUT = {"a": 1, "b": "value"}
 
-    def setUp(self):
-        self.instance = Simple(self.INPUT)
+simple_raw_sample = {"a": 1, "b": "value"}
+simple_model_inst = Simple1(simple_raw_sample)
 
-    def test_a_value(self):
-        self.assertEqual(self.instance.a, 1)
 
-    def test_b_value(self):
-        self.assertEqual(self.instance.b, "value")
+def test_simple_values() -> None:
+    assert simple_model_inst.a == 1
+    assert simple_model_inst.b == "value"
 
-    def test_to_dict(self):
-        self.assertEqual(self.instance.to_dict(), self.INPUT)
 
-    def test_repr(self):
-        self.assertEqual(repr(self.instance), "<Simple a=1 b='value'>")
+def test_simple_eq() -> None:
+    assert simple_model_inst == Simple1(simple_raw_sample)
+    assert simple_model_inst != Simple2({"c": 2})
 
-    def test_eq(self):
-        self.assertEqual(self.instance, Simple(self.INPUT))
-        self.assertNotEqual(self.instance, OtherSimple({"c": 2}))
 
+# ================================
 class Inner(spec.Model):
     value: int
+
 
 class Outer(spec.Model):
     inner: Inner
 
-class TestDeepModel(unittest.TestCase):
-    INPUT = {"inner": {"value": 1}}
 
-    def setUp(self):
-        self.instance = Outer(self.INPUT)
+nested_raw_sample = {"inner": {"value": 1}}
+nested_model_inst = Outer(nested_raw_sample)
 
-    def test_inner_value(self):
-        self.assertEqual(self.instance.inner, Inner(self.INPUT["inner"]))
 
-    def test_inner_value_value(self):
-        self.assertEqual(self.instance.inner.value, 1)
+def test_nested_inner_value() -> None:
+    assert nested_model_inst.inner == Inner(nested_raw_sample["inner"])
 
-    def test_to_dict(self):
-        self.assertEqual(self.instance.to_dict(), self.INPUT)
 
-    def test_repr(self):
-        self.assertEqual(repr(self.instance), "<Outer inner=<Inner value=1>>")
+def test_nested_inner_value_value() -> None:
+    assert nested_model_inst.inner.value == 1
 
+
+# ================================
 class List(spec.Model):
     data: list[int]
 
-class TestListModel(unittest.TestCase):
-    INPUT = {"data": [1, 2, 3]}
 
-    def setUp(self):
-        self.instance = List(self.INPUT)
+list_raw_sample = {"data": [1, 2, 3]}
+list_model_inst = List(list_raw_sample)
 
-    def test_data_value(self):
-        self.assertEqual(self.instance.data, [1, 2, 3])
 
-    def test_to_dict(self):
-        self.assertEqual(self.instance.to_dict(), self.INPUT)
+def test_list_data_value() -> None:
+    assert list_model_inst.data == [1, 2, 3]
 
-    def test_repr(self):
-        self.assertEqual(repr(self.instance), "<List data=[1, 2, 3]>")
 
+# ================================
 class ListOuter(spec.Model):
     inners: list[Inner]
 
-class TestListDeepModel(unittest.TestCase):
-    INPUT = {"inners": [{"value": 1}, {"value": 2}]}
 
-    def setUp(self):
-        self.instance = ListOuter(self.INPUT)
+nested_list_raw_sample = {"inners": [{"value": 1}, {"value": 2}]}
+nested_list_model_inst = ListOuter(nested_list_raw_sample)
 
-    def test_inner_value(self):
-        self.assertEqual(self.instance.inners, [Inner(data) for data in self.INPUT["inners"]])
 
-    def test_inner_value_value(self):
-        for inner, data in zip(self.instance.inners, self.INPUT["inners"]):
-            self.assertEqual(inner.value, data["value"])
+def test_nested_list_inner_value() -> None:
+    assert nested_list_model_inst.inners == [Inner(data) for data in nested_list_raw_sample["inners"]]
 
-    def test_to_dict(self):
-        self.assertEqual(self.instance.to_dict(), self.INPUT)
 
-    def test_repr(self):
-        self.assertEqual(repr(self.instance), "<ListOuter inners=[<Inner value=1>, <Inner value=2>]>")
+def test_nested_list_inner_value_value() -> None:
+    for inner, data in zip(nested_list_model_inst.inners, nested_list_raw_sample["inners"], strict=False):
+        assert inner.value == data["value"]
 
+
+# ================================
 class Dict(spec.Model):
     data: dict[str, int]
 
-class TestDictModel(unittest.TestCase):
-    INPUT = {"data": {"a": 1, "b": 2}}
 
-    def setUp(self):
-        self.instance = Dict(self.INPUT)
+dict_raw_sample = {"data": {"a": 1, "b": 2}}
+dict_model_inst = Dict(dict_raw_sample)
 
-    def test_data_value(self):
-        self.assertEqual(self.instance.data, self.INPUT["data"])
 
-    def test_to_dict(self):
-        self.assertEqual(self.instance.to_dict(), self.INPUT)
+def test_dict_data_value() -> None:
+    assert dict_model_inst.data == dict_raw_sample["data"]
 
-    def test_repr(self):
-        self.assertEqual(repr(self.instance), "<Dict data={'a': 1, 'b': 2}>")
 
+# ================================
 class AnnotatedUsage(spec.Model):
     a: Annotated[int, spec.rename("b")]
 
-class TestAnnotated(unittest.TestCase):
-    INPUT = {"b": 1}
 
-    def setUp(self):
-        self.instance = AnnotatedUsage(self.INPUT)
+annotated_raw_sample = {"b": 1}
+annotated_model_inst = AnnotatedUsage(annotated_raw_sample)
 
-    def test_data_value(self):
-        self.assertEqual(self.instance.a, self.INPUT["b"])
 
-    def test_to_dict(self):
-        self.assertEqual(self.instance.to_dict(), self.INPUT)
+def test_annotated_data_value() -> None:
+    assert annotated_model_inst.a == annotated_raw_sample["b"]
 
-    def test_repr(self):
-        self.assertEqual(repr(self.instance), "<AnnotatedUsage a=1>")
 
+# ================================
 class DefaultUsage(spec.Model):
     a: Annotated[int, spec.default(lambda: 0)]
 
-class TestDefault(unittest.TestCase):
-    INPUT = {}
 
-    def setUp(self):
-        self.instance = DefaultUsage(self.INPUT)
+default_model_inst = DefaultUsage({})
 
-    def test_data_value(self):
-        self.assertEqual(self.instance.a, 0)
 
-    def test_to_dict(self):
-        self.assertEqual(self.instance.to_dict(), {"a": 0})
+def test_default_data_value() -> None:
+    assert default_model_inst.a == 0
 
-    def test_repr(self):
-        self.assertEqual(repr(self.instance), "<DefaultUsage a=0>")
 
-class OptionalNotPassed(spec.Model):
-    value: Optional[int]
+# ================================
+class OptionalModel(spec.Model):
+    value: int | None
 
-class OptionalNotPassedUsage(unittest.TestCase):
-    INPUT = {}
 
-    def setUp(self):
-        self.instance = OptionalNotPassed(self.INPUT)
+optional_not_passed_model_inst = OptionalModel({})
+optional_passed_none_model_inst = OptionalModel({"value": None})
+optional_passed_value_model_inst = OptionalModel({"value": 1})
 
-    def test_value_value(self):
-        self.assertEqual(self.instance.value, None)
 
-    def test_to_dict(self):
-        self.assertEqual(self.instance.to_dict(), {"value": None})
-
-    def test_repr(self):
-        self.assertEqual(repr(self.instance), "<OptionalNotPassed value=None>")
-
-class OptionalPassedNone(spec.Model):
-    value: Optional[int]
-
-class OptionalPassedNoneUsage(unittest.TestCase):
-    INPUT = {"value": None}
-
-    def setUp(self):
-        self.instance = OptionalPassedNone(self.INPUT)
-
-    def test_value_value(self):
-        self.assertEqual(self.instance.value, None)
-
-    def test_to_dict(self):
-        self.assertEqual(self.instance.to_dict(), {"value": None})
-
-    def test_repr(self):
-        self.assertEqual(repr(self.instance), "<OptionalPassedNone value=None>")
-
-class OptionalPassedValue(spec.Model):
-    value: Optional[int]
-
-class OptionalPassedValuedUsage(unittest.TestCase):
-    INPUT = {"value": 1}
-
-    def setUp(self):
-        self.instance = OptionalPassedValue(self.INPUT)
-
-    def test_value_value(self):
-        self.assertEqual(self.instance.value, 1)
-
-    def test_to_dict(self):
-        self.assertEqual(self.instance.to_dict(), {"value": 1})
-
-    def test_repr(self):
-        self.assertEqual(repr(self.instance), "<OptionalPassedValue value=1>")
-
+# ================================
 class AnnotatedOptional(spec.Model):
-    value: Annotated[Optional[int], spec.rename("data")]
+    value: Annotated[int | None, spec.rename("data")]
 
-class AnnotatedOptionalUsage(unittest.TestCase):
-    INPUT = {"data": 1}
 
-    def setUp(self):
-        self.instance = AnnotatedOptional(self.INPUT)
+annotated_optional_raw_sample = {"data": 1}
+annotated_optional_model_inst = AnnotatedOptional({"data": 1})
 
-    def test_value_value(self):
-        self.assertEqual(self.instance.value, 1)
 
-    def test_to_dict(self):
-        self.assertEqual(self.instance.to_dict(), {"data": 1})
-
-    def test_repr(self):
-        self.assertEqual(repr(self.instance), "<AnnotatedOptional value=1>")
-
+# ================================
 class AnnotatedOptionalWithDefault(spec.Model):
-    value: Annotated[Optional[int], spec.default(lambda: 0)]
+    value: Annotated[int | None, spec.default(lambda: 0)]
 
-class AnnotatedOptionalWithDefaultUsage(unittest.TestCase):
-    INPUT = {}
 
-    def setUp(self):
-        self.instance = AnnotatedOptionalWithDefault(self.INPUT)
+annotated_optional_with_default_raw_sample: dict[str, Any] = {}
+annotated_optional_with_default_model_inst = AnnotatedOptionalWithDefault(annotated_optional_with_default_raw_sample)
 
-    def test_value_value(self):
-        self.assertEqual(self.instance.value, 0)
 
-    def test_to_dict(self):
-        self.assertEqual(self.instance.to_dict(), {"value": 0})
-
-    def test_repr(self):
-        self.assertEqual(repr(self.instance), "<AnnotatedOptionalWithDefault value=0>")
-
+# ================================
 class DefaultClsAttr(spec.Model):
     value: int = 1
 
-class DefaultClsAttrUsage(unittest.TestCase):
-    INPUT = {}
 
-    def setUp(self) -> None:
-        self.instance = DefaultClsAttr(self.INPUT)
+default_class_attr_model_inst = DefaultClsAttr({})
 
-    def test_value_value(self):
-        self.assertEqual(self.instance.value, DefaultClsAttr.value)
 
-class Invalid(spec.Model):
-    a: int
-
-class InvalidUsage(unittest.TestCase):
-    def test_fail(self):
-        with self.assertRaises(spec.InvalidType):
-            Invalid({"a": "not a string"})
-
+# ================================
 class PartA(spec.Model):
     a: int
 
+
 class PartB(spec.Model):
     b: str
+
 
 class UntaggedPart(spec.TransparentModel[PartA | PartB]):
     pass
 
 
-class UntaggedUnionUsage(unittest.TestCase):
-    INPUT_1 = {"a": 1}
-    INPUT_2 = {"b": "data"}
+ExternallyTaggedPart: type[spec.TransparentModel[PartA | PartB]] = spec.transparent(
+    Annotated[PartA | PartB, spec.tag("external")]
+)
 
-    def setUp(self):
-        self.instance_1 = UntaggedPart(self.INPUT_1)
-        self.instance_2 = UntaggedPart(self.INPUT_2)
+AdjacentlyTaggedPart: type[spec.TransparentModel[PartA | PartB]] = spec.transparent(
+    Annotated[PartA | PartB, spec.tag("adjacent", tag="type", content="value")]
+)
 
-    def test_instance_1(self):
-        self.assertIsInstance(self.instance_1.value, PartA)
+InternallyTaggedPart: type[spec.TransparentModel[PartA | PartB]] = spec.transparent(
+    PartA | PartB, spec.tag("internal", tag="type")
+)
 
-        assert isinstance(self.instance_1.value, PartA)
 
-        self.assertEqual(self.instance_1.value.a, self.INPUT_1["a"])
+# fmt: off
+untagged_part_raw_sample_a          = {"a": 1}
+untagged_part_raw_sample_b          = {"b": "data"}
+untagged_part_model_inst_a          = UntaggedPart(untagged_part_raw_sample_a)
+untagged_part_model_inst_b          = UntaggedPart(untagged_part_raw_sample_b)
 
-        self.assertEqual(self.instance_1.to_dict(), self.INPUT_1)
+tagged_part_raw_sample_a            = {"PartA": {"a": 1}}
+tagged_part_raw_sample_b            = {"PartB": {"b": "data"}}
+tagged_part_model_inst_a            = ExternallyTaggedPart(tagged_part_raw_sample_a)
+tagged_part_model_inst_b            = ExternallyTaggedPart(tagged_part_raw_sample_b)
 
-    def test_instance_b(self):
-        self.assertIsInstance(self.instance_2.value, PartB)
+adjacently_tagged_part_raw_sample_a = {"type": "PartA", "value": {"a": 1}}
+adjacently_tagged_part_raw_sample_b = {"type": "PartB", "value": {"b": "data"}}
+adjacently_tagged_part_model_inst_a = AdjacentlyTaggedPart(adjacently_tagged_part_raw_sample_a)
+adjacently_tagged_part_model_inst_b = AdjacentlyTaggedPart(adjacently_tagged_part_raw_sample_b)
 
-        assert isinstance(self.instance_2.value, PartB)
+internally_tagged_part_raw_sample_a = {"type": "PartA", "a": 1}
+internally_tagged_part_raw_sample_b = {"type": "PartB", "b": "data"}
+internally_tagged_part_model_inst_a = InternallyTaggedPart(internally_tagged_part_raw_sample_a)
+internally_tagged_part_model_inst_b = InternallyTaggedPart(internally_tagged_part_raw_sample_b)
+# fmt: on
 
-        self.assertEqual(self.instance_2.value.b, self.INPUT_2["b"])
 
-        self.assertEqual(self.instance_2.to_dict(), self.INPUT_2)
+@pytest.mark.parametrize(
+    ("model_instance", "value_class"),
+    [
+        (untagged_part_model_inst_a, PartA),
+        (untagged_part_model_inst_b, PartB),
+        (tagged_part_model_inst_a, PartA),
+        (tagged_part_model_inst_b, PartB),
+        (adjacently_tagged_part_model_inst_a, PartA),
+        (adjacently_tagged_part_model_inst_b, PartB),
+        (internally_tagged_part_model_inst_a, PartA),
+        (internally_tagged_part_model_inst_b, PartB),
+    ],
+)
+def test_tagged_part_value_type(
+    model_instance: spec.TransparentModel[PartA | PartB],
+    value_class: type[spec.Model],
+) -> None:
+    assert isinstance(model_instance.value, value_class)
 
-ExternallyTaggedPart = spec.transparent(Annotated[PartA | PartB, spec.tag("external")])
 
-class ExternallyTaggedUnionUsage(unittest.TestCase):
-    INPUT_1 = {"PartA": {"a": 1}}
-    INPUT_2 = {"PartB": {"b": "data"}}
+@pytest.mark.parametrize(
+    ("model_instance", "name", "expected_value"),
+    [
+        (untagged_part_model_inst_a, "a", 1),
+        (untagged_part_model_inst_b, "b", "data"),
+        (tagged_part_model_inst_a, "a", 1),
+        (tagged_part_model_inst_b, "b", "data"),
+        (adjacently_tagged_part_model_inst_a, "a", 1),
+        (adjacently_tagged_part_model_inst_b, "b", "data"),
+        (internally_tagged_part_model_inst_a, "a", 1),
+        (internally_tagged_part_model_inst_b, "b", "data"),
+    ],
+)
+def test_tagged_part_value_attr(
+    model_instance: spec.TransparentModel[PartA | PartB],
+    name: str,
+    expected_value: object,
+) -> None:
+    assert getattr(model_instance.value, name) == expected_value
 
-    def setUp(self):
-        self.instance_1 = ExternallyTaggedPart(self.INPUT_1)
-        self.instance_2 = ExternallyTaggedPart(self.INPUT_2)
 
-    def test_instance_1(self):
-        self.assertIsInstance(self.instance_1.value, PartA)
-
-        assert isinstance(self.instance_1.value, PartA)
-
-        self.assertEqual(self.instance_1.value.a, self.INPUT_1["PartA"]["a"])
-
-        self.assertEqual(self.instance_1.to_dict(), self.INPUT_1)
-
-    def test_instance_b(self):
-        self.assertIsInstance(self.instance_2.value, PartB)
-
-        assert isinstance(self.instance_2.value, PartB)
-
-        self.assertEqual(self.instance_2.value.b, self.INPUT_2["PartB"]["b"])
-
-        self.assertEqual(self.instance_2.to_dict(), self.INPUT_2)
-
-adjacentlyTaggedPart = spec.transparent(Annotated[PartA | PartB, spec.tag("adjacent", tag="type", content="value")])
-
-class adjacentlyTaggedUnionUsage(unittest.TestCase):
-    INPUT_1 = {"type": "PartA", "value": {"a": 1}}
-    INPUT_2 = {"type": "PartB", "value": {"b": "data"}}
-
-    def setUp(self):
-        self.instance_1 = adjacentlyTaggedPart(self.INPUT_1)
-        self.instance_2 = adjacentlyTaggedPart(self.INPUT_2)
-
-    def test_instance_1(self):
-        self.assertIsInstance(self.instance_1.value, PartA)
-
-        assert isinstance(self.instance_1.value, PartA)
-
-        self.assertEqual(self.instance_1.value.a, self.INPUT_1["value"]["a"])
-
-        self.assertEqual(self.instance_1.to_dict(), self.INPUT_1)
-
-    def test_instance_b(self):
-        self.assertIsInstance(self.instance_2.value, PartB)
-
-        assert isinstance(self.instance_2.value, PartB)
-
-        self.assertEqual(self.instance_2.value.b, self.INPUT_2["value"]["b"])
-
-        self.assertEqual(self.instance_2.to_dict(), self.INPUT_2)
-
-InternallyTaggedPart = spec.transparent(PartA | PartB, spec.tag("internal", tag="type"))
-
-class InternallyTaggedUnionUsage(unittest.TestCase):
-    INPUT_1 = {"type": "PartA", "a": 1}
-    INPUT_2 = {"type": "PartB", "b": "data"}
-
-    def setUp(self):
-        self.instance_1 = InternallyTaggedPart(self.INPUT_1)
-        self.instance_2 = InternallyTaggedPart(self.INPUT_2)
-
-    def test_instance_1(self):
-        self.assertIsInstance(self.instance_1.value, PartA)
-
-        assert isinstance(self.instance_1.value, PartA)
-
-        self.assertEqual(self.instance_1.value.a, self.INPUT_1["a"])
-
-        self.assertEqual(self.instance_1.to_dict(), self.INPUT_1)
-
-    def test_instance_b(self):
-        self.assertIsInstance(self.instance_2.value, PartB)
-
-        assert isinstance(self.instance_2.value, PartB)
-
-        self.assertEqual(self.instance_2.value.b, self.INPUT_2["b"])
-
-        self.assertEqual(self.instance_2.to_dict(), self.INPUT_2)
-
-    def test_repr(self):
-        self.assertEqual(repr(self.instance_1), "<PartAOrPartB <PartA a=1>>")
-        self.assertEqual(repr(self.instance_2), "<PartAOrPartB <PartB b='data'>>")
-
-class TestInvalidTaggedModel(unittest.TestCase):
-    def test_fail(self):
-        with self.assertRaises(spec.MissingTypeName):
-            spec.transparent(int | str, spec.tag("external"))
-
-class Validation(spec.Model):
-    x: Annotated[int, spec.validate(range(10).__contains__)]
-
-class TestValidation(unittest.TestCase):
-    def test_invalid_validation(self):
-        with self.assertRaises(spec.FailedValidation):
-            Validation(x=100)
-
-    def test_valid_validation(self):
-        Validation(x=5)
-
+# ================================
 class GlobalRename(spec.Model, rename=spec.CamelCase):
     my_foo: int
 
-class TestGlobalRename(unittest.TestCase):
-    INPUT_1 = {"myFoo": 1}
-    INPUT_2 = {"my_foo": 1}
 
-    def setUp(self) -> None:
-        self.instance = GlobalRename(self.INPUT_1)
+global_rename_raw_sample_1 = {"myFoo": 1}
+global_rename_raw_sample_2 = {"my_foo": 1}
 
-    def test_instance(self):
-        self.assertEqual(self.instance.my_foo, self.INPUT_1["myFoo"])
+global_rename_model_inst = GlobalRename(global_rename_raw_sample_1)
 
-    def test_invalid(self):
-        with self.assertRaises(spec.MissingRequiredKey):
-            GlobalRename(self.INPUT_2)
 
-if __name__ == "__main__":
-    unittest.main()
+def test_global_rename_name_change() -> None:
+    assert global_rename_model_inst.my_foo == 1
+
+
+def test_missing_required_key() -> None:
+    with pytest.raises(spec.MissingRequiredKey):
+        GlobalRename(global_rename_raw_sample_2)
+
+
+# ================================
+@pytest.mark.parametrize(
+    ("model_instance", "expected_value"),
+    [
+        (optional_not_passed_model_inst, None),
+        (optional_passed_none_model_inst, None),
+        (optional_passed_value_model_inst, 1),
+        (annotated_optional_model_inst, 1),
+        (annotated_optional_with_default_model_inst, 0),
+        (default_class_attr_model_inst, DefaultClsAttr.value),
+    ],
+)
+def test_value_value(model_instance: spec.Model, expected_value: object) -> None:
+    assert model_instance.value == expected_value  # pyright: ignore[reportAttributeAccessIssue, reportUnknownMemberType]
+
+
+@pytest.mark.parametrize(
+    ("model_instance", "raw_sample"),
+    [
+        (simple_model_inst, {"a": 1, "b": "value"}),
+        (nested_model_inst, {"inner": {"value": 1}}),
+        (list_model_inst, {"data": [1, 2, 3]}),
+        (nested_list_model_inst, {"inners": [{"value": 1}, {"value": 2}]}),
+        (dict_model_inst, {"data": {"a": 1, "b": 2}}),
+        (annotated_model_inst, {"b": 1}),
+        (default_model_inst, {"a": 0}),
+        (optional_not_passed_model_inst, {"value": None}),
+        (optional_passed_none_model_inst, {"value": None}),
+        (optional_passed_value_model_inst, {"value": 1}),
+        (annotated_optional_model_inst, {"data": 1}),
+        (annotated_optional_with_default_model_inst, {"value": 0}),
+        (untagged_part_model_inst_a, {"a": 1}),
+        (untagged_part_model_inst_b, {"b": "data"}),
+        (tagged_part_model_inst_a, {"PartA": {"a": 1}}),
+        (tagged_part_model_inst_b, {"PartB": {"b": "data"}}),
+        (adjacently_tagged_part_model_inst_a, {"type": "PartA", "value": {"a": 1}}),
+        (adjacently_tagged_part_model_inst_b, {"type": "PartB", "value": {"b": "data"}}),
+        (internally_tagged_part_model_inst_a, {"type": "PartA", "a": 1}),
+        (internally_tagged_part_model_inst_b, {"type": "PartB", "b": "data"}),
+    ],
+)
+def test_model_to_dict(model_instance: spec.Model, raw_sample: dict[str, Any]) -> None:
+    assert model_instance.to_dict() == raw_sample
+
+
+@pytest.mark.parametrize(
+    ("model_instance", "expected_value"),
+    [
+        (simple_model_inst, "<Simple1 a=1 b='value'>"),
+        (nested_model_inst, "<Outer inner=<Inner value=1>>"),
+        (list_model_inst, "<List data=[1, 2, 3]>"),
+        (nested_list_model_inst, "<ListOuter inners=[<Inner value=1>, <Inner value=2>]>"),
+        (dict_model_inst, "<Dict data={'a': 1, 'b': 2}>"),
+        (annotated_model_inst, "<AnnotatedUsage a=1>"),
+        (default_model_inst, "<DefaultUsage a=0>"),
+        (optional_not_passed_model_inst, "<OptionalModel value=None>"),
+        (optional_passed_none_model_inst, "<OptionalModel value=None>"),
+        (optional_passed_value_model_inst, "<OptionalModel value=1>"),
+        (annotated_optional_model_inst, "<AnnotatedOptional value=1>"),
+        (annotated_optional_with_default_model_inst, "<AnnotatedOptionalWithDefault value=0>"),
+        (internally_tagged_part_model_inst_a, "<PartAOrPartB <PartA a=1>>"),
+        (internally_tagged_part_model_inst_b, "<PartAOrPartB <PartB b='data'>>"),
+    ],
+)
+def test_model_repr(model_instance: spec.Model, expected_value: str) -> None:
+    assert repr(model_instance) == expected_value
+
+
+# ================================
+@pytest.mark.parametrize(
+    ("model_class", "payload"),
+    [
+        (Simple2, {"c": "not a string"}),
+        (List, {"data": [1, 2, "3"]}),
+    ],
+)
+def test_invalid_type(model_class: type[spec.Model], payload: dict[str, Any]) -> None:
+    with pytest.raises(spec.InvalidType):
+        model_class(payload)
+
+
+def test_invalid_tag() -> None:
+    with pytest.raises(spec.MissingTypeName):
+        spec.transparent(int | str, spec.tag("external"))
+
+
+class ValueValidator(spec.Model):
+    x: Annotated[int, spec.validate(range(10).__contains__)]
+
+
+def test_invalid_value() -> None:
+    with pytest.raises(spec.FailedValidation):
+        ValueValidator(x=100)
+
+
+def test_valid_value() -> None:
+    ValueValidator(x=5)

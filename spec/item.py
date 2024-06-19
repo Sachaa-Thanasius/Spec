@@ -1,13 +1,15 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
+from typing import Any, Generic, Literal, Self, overload
 
-from typing import Callable, Any, Generic, Literal, Self, overload
 from typing_extensions import TypeVar
 
 __all__ = ("Item", "InternalItem", "rename", "default", "validate", "hook", "tag")
 
 T = TypeVar("T", default=Any)
+
 
 @dataclass
 class Item(Generic[T]):
@@ -16,18 +18,29 @@ class Item(Generic[T]):
     _ty: type[T] | None = None
     _internal_items: list[InternalItem] | None = None
     _default: Callable[[], T] | None = None
-    _modified: list[str] = field(default_factory=lambda: [])
+    _modified: list[str] = field(default_factory=list)
     _validate: Callable[[T], bool] = lambda _: True
     _hook: Callable[[T], T] = lambda x: x
     _tag: Literal["untagged", "external", "internal", "adjacent"] = "untagged"
-    _tag_info: dict[str, Any] = field(default_factory=lambda: {})
+    _tag_info: dict[str, Any] = field(default_factory=dict)
     _type_name: str | None = None
 
     def _to_internal(self) -> InternalItem[T]:
         assert self._key is not None
         assert self._ty is not None
 
-        return InternalItem(self._key, self._rename, self._ty, self._internal_items or [], self._default, self._validate, self._hook, self._tag, self._tag_info, self._type_name)
+        return InternalItem(
+            self._key,
+            self._rename,
+            self._ty,
+            self._internal_items or [],
+            self._default,
+            self._validate,
+            self._hook,
+            self._tag,
+            self._tag_info,
+            self._type_name,
+        )
 
     def rename(self, key: str) -> Self:
         self._rename = key
@@ -54,20 +67,16 @@ class Item(Generic[T]):
         return self
 
     @overload
-    def tag(self, tag_type: Literal["untagged"]) -> Self:
-        ...
+    def tag(self, tag_type: Literal["untagged"]) -> Self: ...
 
     @overload
-    def tag(self, tag_type: Literal["external"]) -> Self:
-        ...
+    def tag(self, tag_type: Literal["external"]) -> Self: ...
 
     @overload
-    def tag(self, tag_type: Literal["internal"], *, tag: Any) -> Self:
-        ...
+    def tag(self, tag_type: Literal["internal"], *, tag: Any) -> Self: ...
 
     @overload
-    def tag(self, tag_type: Literal["adjacent"], *, tag: Any, content: Any) -> Self:
-        ...
+    def tag(self, tag_type: Literal["adjacent"], *, tag: Any, content: Any) -> Self: ...
 
     def tag(self, tag_type: Literal["untagged", "external", "internal", "adjacent"], **kwargs: Any) -> Self:
         self._tag = tag_type
@@ -82,6 +91,7 @@ class Item(Generic[T]):
         self._modified.append("_type_name")
 
         return self
+
 
 @dataclass
 class InternalItem(Generic[T]):
@@ -104,33 +114,38 @@ class InternalItem(Generic[T]):
 def rename(key: str) -> Item:
     return Item().rename(key)
 
+
 def default(default: Callable[[], T]) -> Item[T]:
     return Item().default(default)
+
 
 def validate(validator: Callable[[T], bool]) -> Item[T]:
     return Item().validate(validator)
 
+
 def hook(f: Callable[[T], T]) -> Item[T]:
     return Item().hook(f)
 
-@overload
-def tag(tag_type: Literal["untagged"]) -> Item[T]:
-    ...
 
 @overload
-def tag(tag_type: Literal["external"]) -> Item[T]:
-    ...
+def tag(tag_type: Literal["untagged"]) -> Item[T]: ...
+
 
 @overload
-def tag(tag_type: Literal["internal"], *, tag: Any) -> Item[T]:
-    ...
+def tag(tag_type: Literal["external"]) -> Item[T]: ...
+
 
 @overload
-def tag(tag_type: Literal["adjacent"], *, tag: Any, content: Any) -> Item[T]:
-    ...
+def tag(tag_type: Literal["internal"], *, tag: Any) -> Item[T]: ...
+
+
+@overload
+def tag(tag_type: Literal["adjacent"], *, tag: Any, content: Any) -> Item[T]: ...
+
 
 def tag(tag_type: Literal["untagged", "external", "internal", "adjacent"], **kwargs: Any) -> Item[T]:
     return Item().tag(tag_type, **kwargs)
+
 
 def type_name(name: str) -> Item[T]:
     return Item().type_name(name)

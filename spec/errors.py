@@ -1,22 +1,37 @@
-__all__ = ("SpecError", "MissingArgument", "MissingRequiredKey", "InvalidType", "FailedValidation", "UnknownUnionKey", "MissingTypeName")
+__all__ = (
+    "SpecError",
+    "MissingArgument",
+    "MissingRequiredKey",
+    "InvalidType",
+    "FailedValidation",
+    "UnknownUnionKey",
+    "MissingTypeName",
+)
+
 
 class SpecError(Exception):
-    pass
+    """Base exception class for Spec."""
+
 
 class MissingArgument(SpecError):
-    pass
+    """Exception that's raised when a Model is instantiated with no arguments."""
+
 
 class MissingRequiredKey(SpecError):
-    pass
+    """Exception that's raised when a Model is instantiated without a required key."""
+
 
 class InvalidType(SpecError):
     pass
 
+
 class FailedValidation(SpecError):
     pass
 
+
 class UnknownUnionKey(SpecError):
     pass
+
 
 class MissingTypeName(SpecError):
     pass

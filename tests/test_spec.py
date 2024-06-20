@@ -5,6 +5,22 @@ import pytest
 import spec
 
 
+class Simple(spec.Model):
+    a: str
+    b: float
+
+
+def test_valid_instantiation() -> None:
+    input_value = {"a": "hello", "b": 1.0}
+    Simple(input_value)
+    Simple(**input_value)
+
+
+def test_invalid_instantiation() -> None:
+    with pytest.raises(spec.errors.MissingArgument):
+        Simple()
+
+
 # ================================
 class Simple1(spec.Model):
     a: int
@@ -246,23 +262,39 @@ def test_tagged_part_value_attr(
 
 
 # ================================
-class GlobalRename(spec.Model, rename=spec.CamelCase):
-    my_foo: int
+@pytest.mark.parametrize(
+    ("renaming_scheme", "attr_name"),
+    [
+        (spec.Upper, "MY_FOO_VAR"),
+        (spec.CamelCase, "myFooVar"),
+        (spec.PascalCase, "MyFooVar"),
+        (spec.KebabCase, "my-foo-var"),
+        (spec.ScreamingKebabCase, "MY-FOO-VAR"),
+    ],
+)
+def test_renaming_schemes(renaming_scheme: type[spec.RenameScheme], attr_name: str) -> None:
+    class GlobalRename(spec.Model, rename=renaming_scheme):
+        my_foo_var: int
+
+    instance = GlobalRename({attr_name: 1})
+
+    assert instance.my_foo_var == 1
+
+    assert instance.to_dict() == {attr_name: 1}
+
+    with pytest.raises(spec.errors.MissingRequiredKey):
+        GlobalRename({"my_foo": 2})
 
 
-global_rename_raw_sample_1 = {"myFoo": 1}
-global_rename_raw_sample_2 = {"my_foo": 1}
-
-global_rename_model_inst = GlobalRename(global_rename_raw_sample_1)
-
-
-def test_global_rename_name_change() -> None:
-    assert global_rename_model_inst.my_foo == 1
+# ================================
+class WithEquals(spec.Model):
+    data: Annotated[str, spec.hook(lambda v: f"===={v}====")]
 
 
-def test_missing_required_key() -> None:
-    with pytest.raises(spec.MissingRequiredKey):
-        GlobalRename(global_rename_raw_sample_2)
+def test_hooked_value() -> None:
+    value = "hello world!"
+    instance = WithEquals({"data": value})
+    assert instance.data == f"===={value}===="
 
 
 # ================================
@@ -342,12 +374,12 @@ def test_model_repr(model_instance: spec.Model, expected_value: str) -> None:
     ],
 )
 def test_invalid_type(model_class: type[spec.Model], payload: dict[str, Any]) -> None:
-    with pytest.raises(spec.InvalidType):
+    with pytest.raises(spec.errors.InvalidType):
         model_class(payload)
 
 
 def test_invalid_tag() -> None:
-    with pytest.raises(spec.MissingTypeName):
+    with pytest.raises(spec.errors.MissingTypeName):
         spec.transparent(int | str, spec.tag("external"))
 
 
@@ -356,7 +388,7 @@ class ValueValidator(spec.Model):
 
 
 def test_invalid_value() -> None:
-    with pytest.raises(spec.FailedValidation):
+    with pytest.raises(spec.errors.FailedValidation):
         ValueValidator(x=100)
 
 

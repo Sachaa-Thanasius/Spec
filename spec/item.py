@@ -1,12 +1,16 @@
 from __future__ import annotations
 
+import sys
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any, Generic, Literal, Self, overload
 
-from typing_extensions import TypeVar
+if sys.version_info >= (3, 13):  # pragma: >=3.13 cover
+    from typing import TypeVar
+else:  # pragma: <3.13 cover
+    from typing_extensions import TypeVar
 
-__all__ = ("Item", "InternalItem", "rename", "default", "validate", "hook", "tag")
+__all__ = ("Item", "rename", "default", "validate", "hook", "tag", "type_name")
 
 T = TypeVar("T", default=Any)
 

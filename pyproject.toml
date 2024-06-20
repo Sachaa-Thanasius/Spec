@@ -120,8 +120,7 @@ ignore = [
     "TRY003",
     "EM101",
     "EM102",
-    # Allow any number of parameters for a function.
-    "PLR0913",
+    "RUF012", # Assigning mutable default values at class scope is a thing.
 ]
 unfixable = [
     "ERA", # Prevent incorrectly detected comments from being automatically deleted.
@@ -130,6 +129,8 @@ unfixable = [
 [tool.ruff.lint.pyupgrade]
 keep-runtime-typing = true
 
+[tool.ruff.lint.per-file-ignores]
+"**/__init__.py" = ["F403", "F405"] # Ruff doesn't like star imports.
 
 # ==== Type-checking configuration.
 

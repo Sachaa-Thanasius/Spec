@@ -1,5 +1,7 @@
-# ruff: noqa: RUF012
+# This test is a section of pre-commit's configuration schema.
 from typing import Annotated
+
+import pytest
 
 import spec
 
@@ -65,26 +67,24 @@ class ManifestHook(spec.Model):
     description: str = DEFAULT
     log_file: str = ""
     require_serial: bool = False
-    stages: Annotated[
-        list[str],
-        spec.validate(lambda lst: {_STAGES.get(v, v) for v in lst}.issubset(STAGES)),
-    ] = []
+    stages: Annotated[list[str], spec.validate(lambda lst: {_STAGES.get(v, v) for v in lst}.issubset(STAGES))] = []
     verbose: bool = False
 
 
-# def test_manifest_hook() -> None:
-#     dct = {
-#         "id": "fake-hook",
-#         "name": "fake-hook",
-#         "entry": "fake-hook",
-#         "language": "system",
-#         "stages": ["commit-msg", "push", "commit", "merge-commit"],
-#     }
-#     processed = ManifestHook(dct)
+@pytest.mark.xfail(reason="Something's currently up with validating a list of strings.")
+def test_manifest_hook() -> None:
+    dct = {
+        "id": "fake-hook",
+        "name": "fake-hook",
+        "entry": "fake-hook",
+        "language": "system",
+        "stages": ["commit-msg", "push", "commit", "merge-commit"],
+    }
+    processed = ManifestHook(dct)
 
-#     assert processed.stages == [
-#         "commit-msg",
-#         "pre-push",
-#         "pre-commit",
-#         "pre-merge-commit",
-#     ]
+    assert processed.stages == [
+        "commit-msg",
+        "pre-push",
+        "pre-commit",
+        "pre-merge-commit",
+    ]

@@ -1,17 +1,19 @@
 from __future__ import annotations
 
-from types import UnionType
-from typing import TYPE_CHECKING, Any, Literal, Union, cast
+import sys
+import types
+from typing import TYPE_CHECKING, Any, Literal, Union
 from typing import get_origin as _get_origin
 
-from typing_extensions import TypeVar
+if sys.version_info >= (3, 13):  # pragma: >=3.13 cover
+    from typing import TypeVar
+else:  # pragma: <3.13 cover
+    from typing_extensions import TypeVar
 
 if TYPE_CHECKING:
     from .item import InternalItem
 
 __all__ = (
-    "UniqueList",
-    "_Missing",
     "Missing",
     "is_union",
     "get_origin",
@@ -36,16 +38,20 @@ class _Missing:
         return False
 
 
-def is_union(ty: Any) -> bool:
-    origin = get_origin(ty)
-
-    return origin is Union or origin is UnionType
-
-
 Missing = _Missing()
 
 
+def is_union(ty: Any) -> bool:
+    """Determine if the origin of a type is Union/UnionType."""
+
+    origin = get_origin(ty)
+
+    return origin is Union or origin is types.UnionType
+
+
 def get_origin(obj: Any) -> Any:
+    """Get the unsubscripted version of a type, or just the type if unsupported."""
+
     return _get_origin(obj) or obj
 
 
@@ -58,7 +64,7 @@ def get_original_bases(obj: Any) -> tuple[Any, ...]:
 
 
 def get_type_name(obj: Any) -> str:
-    return cast(str, getattr(obj, "_type_name", obj.__name__))
+    return getattr(obj, "_type_name", obj.__name__)
 
 
 def pretty_type(item: InternalItem) -> str:
@@ -67,7 +73,7 @@ def pretty_type(item: InternalItem) -> str:
     else:
         generic_str = ""
 
-    if not isinstance(item.ty, list):
+    if not isinstance(item.ty, list):  # pyright: ignore [reportUnknownMemberType]
         return f"{item.ty.__name__}{generic_str}"
     else:
         return f"{to_union([ty.ty.__name__ for ty in item.ty])}{generic_str}"
@@ -78,21 +84,19 @@ def to_union(types: list[Any]) -> str:
 
 
 def generate_type_from_data(data: Any) -> str:
-    ty = type(data)
-
     if isinstance(data, (list, set, tuple)):
-        types = UniqueList()
+        unique_types = UniqueList()
 
-        for value in data:
-            types.append(generate_type_from_data(value))
+        for value in data:  # pyright: ignore [reportUnknownVariableType]
+            unique_types.append(generate_type_from_data(value))
 
-        generics = [to_union(types)]
+        generics = [to_union(unique_types)]
 
     elif isinstance(data, dict):
         key_types = UniqueList()
         value_types = UniqueList()
 
-        for key, value in data.items():
+        for key, value in data.items():  # pyright: ignore [reportUnknownVariableType]
             key_types.append(generate_type_from_data(key))
             value_types.append(generate_type_from_data(value))
 
@@ -102,4 +106,5 @@ def generate_type_from_data(data: Any) -> str:
 
     generic_str = f"[{', '.join(generics)}]" if generics else ""
 
-    return f"{ty.__name__}{generic_str}"
+    typ = type(data)  # pyright: ignore[reportUnknownArgumentType, reportUnknownVariableType]
+    return f"{typ.__name__}{generic_str}"

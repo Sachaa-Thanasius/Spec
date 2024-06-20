@@ -411,9 +411,4 @@ def transparent(ty: type[T] | Any, item: Item | None = None) -> type[Transparent
     else:
         name = get_type_name(ty)
 
-    class Mod(TransparentModel[ty], item=item):
-        pass
-
-    Mod.__name__ = name
-
-    return Mod
+    return types.new_class(name, (TransparentModel[ty],), {"item": item})

@@ -1,4 +1,4 @@
-from typing import Annotated, Any
+from typing import Annotated
 
 import pytest
 
@@ -159,7 +159,7 @@ class AnnotatedOptionalWithDefault(spec.Model):
     value: Annotated[int | None, spec.default(lambda: 0)]
 
 
-annotated_optional_with_default_raw_sample: dict[str, Any] = {}
+annotated_optional_with_default_raw_sample: dict[str, object] = {}
 annotated_optional_with_default_model_inst = AnnotatedOptionalWithDefault(annotated_optional_with_default_raw_sample)
 
 
@@ -338,7 +338,7 @@ def test_value_value(model_instance: spec.Model, expected_value: object) -> None
         (internally_tagged_part_model_inst_b, {"type": "PartB", "b": "data"}),
     ],
 )
-def test_model_to_dict(model_instance: spec.Model, raw_sample: dict[str, Any]) -> None:
+def test_model_to_dict(model_instance: spec.Model, raw_sample: dict[str, object]) -> None:
     assert model_instance.to_dict() == raw_sample
 
 
@@ -373,7 +373,7 @@ def test_model_repr(model_instance: spec.Model, expected_value: str) -> None:
         (List, {"data": [1, 2, "3"]}),
     ],
 )
-def test_invalid_type(model_class: type[spec.Model], payload: dict[str, Any]) -> None:
+def test_invalid_type(model_class: type[spec.Model], payload: dict[str, object]) -> None:
     with pytest.raises(spec.errors.InvalidType):
         model_class(payload)
 

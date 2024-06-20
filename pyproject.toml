@@ -6,13 +6,14 @@ build-backend = "hatchling.build"
 name = "spec"
 description = 'A statically typed data structure validator with support for advance features.'
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.10"
 license = "MIT"
 keywords = []
 authors = [{ name = "Zomatree", email = "me@zomatree.live" }]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Programming Language :: Python",
+    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: Implementation :: CPython",
 ]
@@ -35,13 +36,13 @@ dependencies = ["coverage[toml]~=7.4", "covdefaults", "pytest"]
 installer = "pip"
 
 [[tool.hatch.envs.hatch-test.matrix]]
-python = ["3.11", "3.12"]
+python = ["3.10", "3.11", "3.12"]
 
 [tool.pytest.ini_options]
 addopts = ["--import-mode=importlib"]
 
 [tool.coverage.report]
-fail_under = 70
+fail_under = 90
 
 [tool.coverage.run]
 plugins = ["covdefaults"]
@@ -52,7 +53,7 @@ omit = ["tests/test_integration.py"]
 
 [tool.ruff]
 include = ["spec/*.py", "tests/*.py"]
-target-version = "py311"
+target-version = "py310"
 line-length = 120
 
 [tool.ruff.lint]
@@ -136,7 +137,7 @@ keep-runtime-typing = true
 
 [tool.pyright]
 include = ["spec", "tests"]
-pythonVersion = "3.11"
+pythonVersion = "3.10"
 typeCheckingMode = "strict"
 
 reportPrivateUsage = false

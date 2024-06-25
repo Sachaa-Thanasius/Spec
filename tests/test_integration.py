@@ -1,4 +1,6 @@
-# This test is a section of pre-commit's configuration schema.
+# This test is a modified section of pre-commit's configuration schema, for the sake of emulating a real-world use case.
+# See pre_commit/clientlib.py.
+
 from typing import Annotated
 
 import pytest
@@ -42,15 +44,19 @@ def _parse_version(version: str) -> tuple[int, ...]:
     return tuple(int(p) for p in version.split("."))
 
 
-def check_min_version(version: str) -> bool:
+def check_max_version(version: str) -> bool:
     return _parse_version(version) <= VERSION
 
 
 check_type_tag = ALL_TAGS.__contains__
 
 
+def check_valid_stage(value: str) -> bool:
+    return _STAGES.get(value, value) in STAGES
+
+
 class ManifestHook(spec.Model):
-    minimum_pre_commit_version: Annotated[str, spec.validate(check_min_version)] = "0"
+    minimum_pre_commit_version: Annotated[str, spec.validate(check_max_version)] = "0"
     id: str
     name: str
     entry: str
@@ -67,11 +73,11 @@ class ManifestHook(spec.Model):
     description: str = DEFAULT
     log_file: str = ""
     require_serial: bool = False
-    stages: Annotated[list[str], spec.validate(lambda lst: {_STAGES.get(v, v) for v in lst}.issubset(STAGES))] = []
+    stages: Annotated[list[str], spec.validate(check_valid_stage)] = []
     verbose: bool = False
 
 
-@pytest.mark.xfail(reason="Something's currently up with validating a list of strings.")
+# @pytest.mark.xfail(reason="Something's currently wrong when validating a list.")
 def test_manifest_hook() -> None:
     dct = {
         "id": "fake-hook",

@@ -17,7 +17,7 @@ def test_valid_instantiation() -> None:
 
 
 def test_invalid_instantiation() -> None:
-    with pytest.raises(spec.errors.MissingArgument):
+    with pytest.raises(spec.MissingArgument):
         Simple()
 
 
@@ -282,7 +282,7 @@ def test_renaming_schemes(renaming_scheme: type[spec.RenameScheme], attr_name: s
 
     assert instance.to_dict() == {attr_name: 1}
 
-    with pytest.raises(spec.errors.MissingRequiredKey):
+    with pytest.raises(spec.MissingRequiredKey):
         GlobalRename({"my_foo": 2})
 
 
@@ -374,12 +374,12 @@ def test_model_repr(model_instance: spec.Model, expected_value: str) -> None:
     ],
 )
 def test_invalid_type(model_class: type[spec.Model], payload: dict[str, object]) -> None:
-    with pytest.raises(spec.errors.InvalidType):
+    with pytest.raises(spec.InvalidType):
         model_class(payload)
 
 
 def test_invalid_tag() -> None:
-    with pytest.raises(spec.errors.MissingTypeName):
+    with pytest.raises(spec.MissingTypeName):
         spec.transparent(int | str, spec.tag("external"))
 
 
@@ -388,7 +388,7 @@ class ValueValidator(spec.Model):
 
 
 def test_invalid_value() -> None:
-    with pytest.raises(spec.errors.FailedValidation):
+    with pytest.raises(spec.FailedValidation):
         ValueValidator(x=100)
 
 

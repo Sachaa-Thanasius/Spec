@@ -1,26 +1,6 @@
 import pytest
 
-from spec import Item, _generate_type_repr_from_data, _prettify_type, _UniqueList
-
-
-@pytest.mark.parametrize(
-    "items",
-    [
-        pytest.param([1, 2, 3, 4, 5, 5, 6, 6], id="integers"),
-        pytest.param(["hello", "world", "hello2", "hello", "world"], id="strings"),
-        pytest.param([int, str, float, tuple, str, int], id="builtin types"),
-    ],
-)
-def test_unique_list(items: list[object]) -> None:
-    unique_list = _UniqueList()
-
-    for item in items:
-        unique_list.append(item)
-
-    guaranteed_unique = set(items)
-
-    assert len(unique_list) == len(guaranteed_unique)
-    assert set(unique_list) == guaranteed_unique
+from spec import Item, _generate_type_repr_from_data, _prettify_type
 
 
 @pytest.mark.parametrize(

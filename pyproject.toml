@@ -113,6 +113,10 @@ ignore = [
     "ISC002",
     # == Project-specific rules.
     "RUF012", # Assigning mutable default values at class scope is a thing for dataclass-like structures.
+    # Some complexity is unavoidable.
+    "PLR0912",
+    "PLR0913",
+    "PLR0915",
 ]
 unfixable = [
     "ERA", # Prevent incorrectly detected comments from being automatically deleted.

@@ -1,3 +1,4 @@
+import types
 from typing import Annotated
 
 import pytest
@@ -16,9 +17,16 @@ def test_valid_instantiation() -> None:
     Simple(**input_value)
 
 
-def test_invalid_instantiation() -> None:
-    with pytest.raises(spec.MissingArgument):
+def test_invalid_instantiation_args() -> None:
+    with pytest.raises(spec.MissingArgument) as exc_info:
         Simple()
+
+    assert exc_info.value.args[0] == "No data or kwargs passed to Model."
+
+    with pytest.raises(ValueError) as exc_info:  # noqa: PT011
+        Simple({"a": "hello"}, b=1.0)  # pyright: ignore [reportCallIssue]
+
+    assert exc_info.value.args[0] == "Only data or kwargs is accepted, not both."
 
 
 # ================================
@@ -150,7 +158,6 @@ class AnnotatedOptional(spec.Model):
     value: Annotated[int | None, spec.rename("data")]
 
 
-annotated_optional_raw_sample = {"data": 1}
 annotated_optional_model_inst = AnnotatedOptional({"data": 1})
 
 
@@ -159,8 +166,7 @@ class AnnotatedOptionalWithDefault(spec.Model):
     value: Annotated[int | None, spec.default(lambda: 0)]
 
 
-annotated_optional_with_default_raw_sample: dict[str, object] = {}
-annotated_optional_with_default_model_inst = AnnotatedOptionalWithDefault(annotated_optional_with_default_raw_sample)
+annotated_optional_with_default_model_inst = AnnotatedOptionalWithDefault({})
 
 
 # ================================
@@ -203,10 +209,10 @@ untagged_part_raw_sample_b          = {"b": "data"}
 untagged_part_model_inst_a          = UntaggedPart(untagged_part_raw_sample_a)
 untagged_part_model_inst_b          = UntaggedPart(untagged_part_raw_sample_b)
 
-tagged_part_raw_sample_a            = {"PartA": {"a": 1}}
-tagged_part_raw_sample_b            = {"PartB": {"b": "data"}}
-tagged_part_model_inst_a            = ExternallyTaggedPart(tagged_part_raw_sample_a)
-tagged_part_model_inst_b            = ExternallyTaggedPart(tagged_part_raw_sample_b)
+externally_tagged_part_raw_sample_a = {"PartA": {"a": 1}}
+externally_tagged_part_raw_sample_b = {"PartB": {"b": "data"}}
+externally_tagged_part_model_inst_a = ExternallyTaggedPart(externally_tagged_part_raw_sample_a)
+externally_tagged_part_model_inst_b = ExternallyTaggedPart(externally_tagged_part_raw_sample_b)
 
 adjacently_tagged_part_raw_sample_a = {"type": "PartA", "value": {"a": 1}}
 adjacently_tagged_part_raw_sample_b = {"type": "PartB", "value": {"b": "data"}}
@@ -225,8 +231,8 @@ internally_tagged_part_model_inst_b = InternallyTaggedPart(internally_tagged_par
     [
         (untagged_part_model_inst_a, PartA),
         (untagged_part_model_inst_b, PartB),
-        (tagged_part_model_inst_a, PartA),
-        (tagged_part_model_inst_b, PartB),
+        (externally_tagged_part_model_inst_a, PartA),
+        (externally_tagged_part_model_inst_b, PartB),
         (adjacently_tagged_part_model_inst_a, PartA),
         (adjacently_tagged_part_model_inst_b, PartB),
         (internally_tagged_part_model_inst_a, PartA),
@@ -245,8 +251,8 @@ def test_tagged_part_value_type(
     [
         (untagged_part_model_inst_a, "a", 1),
         (untagged_part_model_inst_b, "b", "data"),
-        (tagged_part_model_inst_a, "a", 1),
-        (tagged_part_model_inst_b, "b", "data"),
+        (externally_tagged_part_model_inst_a, "a", 1),
+        (externally_tagged_part_model_inst_b, "b", "data"),
         (adjacently_tagged_part_model_inst_a, "a", 1),
         (adjacently_tagged_part_model_inst_b, "b", "data"),
         (internally_tagged_part_model_inst_a, "a", 1),
@@ -262,28 +268,53 @@ def test_tagged_part_value_attr(
 
 
 # ================================
-@pytest.mark.parametrize(
-    ("renaming_scheme", "attr_name"),
+
+renaming_cases = pytest.mark.parametrize(
+    ("renaming_scheme", "attr_name", "internal_attr_name"),
     [
-        (spec.Upper, "MY_FOO_VAR"),
-        (spec.CamelCase, "myFooVar"),
-        (spec.PascalCase, "MyFooVar"),
-        (spec.KebabCase, "my-foo-var"),
-        (spec.ScreamingKebabCase, "MY-FOO-VAR"),
+        (spec.Upper, "MY", "my"),
+        (spec.PascalCase, "My", "my"),
+        (spec.ScreamingKebabCase, "MY", "my"),
+        (spec.Upper, "MY_FOO_VAR", "my_foo_var"),
+        (spec.CamelCase, "myFooVar", "my_foo_var"),
+        (spec.PascalCase, "MyFooVar", "my_foo_var"),
+        (spec.KebabCase, "my-foo-var", "my_foo_var"),
+        (spec.ScreamingKebabCase, "MY-FOO-VAR", "my_foo_var"),
     ],
 )
-def test_renaming_schemes(renaming_scheme: type[spec.RenameScheme], attr_name: str) -> None:
-    class GlobalRename(spec.Model, rename=renaming_scheme):
-        my_foo_var: int
+
+
+@renaming_cases
+def test_renaming_schemes(renaming_scheme: type[spec.RenameScheme], attr_name: str, internal_attr_name: str) -> None:
+    GlobalRename = types.new_class(
+        "GlobalRename",
+        (spec.Model,),
+        {"rename": renaming_scheme},
+        lambda ns: ns.update(__annotations__={internal_attr_name: int}),
+    )
 
     instance = GlobalRename({attr_name: 1})
-
-    assert instance.my_foo_var == 1
-
     assert instance.to_dict() == {attr_name: 1}
+    assert getattr(instance, internal_attr_name) == 1
 
-    with pytest.raises(spec.MissingRequiredKey):
-        GlobalRename({"my_foo": 2})
+
+@renaming_cases
+def test_invalid_input_when_rename_active(
+    renaming_scheme: type[spec.RenameScheme],
+    attr_name: str,
+    internal_attr_name: str,
+) -> None:
+    GlobalRename = types.new_class(
+        "GlobalRename",
+        (spec.Model,),
+        {"rename": renaming_scheme},
+        lambda ns: ns.update(__annotations__={internal_attr_name: int}),
+    )
+
+    with pytest.raises(spec.MissingRequiredKey) as exc_info:
+        GlobalRename({internal_attr_name: 2})
+
+    assert exc_info.value.args[0] == f"Missing required key 'GlobalRename.{attr_name}'."
 
 
 # ================================
@@ -330,8 +361,8 @@ def test_value_value(model_instance: spec.Model, expected_value: object) -> None
         (annotated_optional_with_default_model_inst, {"value": 0}),
         (untagged_part_model_inst_a, {"a": 1}),
         (untagged_part_model_inst_b, {"b": "data"}),
-        (tagged_part_model_inst_a, {"PartA": {"a": 1}}),
-        (tagged_part_model_inst_b, {"PartB": {"b": "data"}}),
+        (externally_tagged_part_model_inst_a, {"PartA": {"a": 1}}),
+        (externally_tagged_part_model_inst_b, {"PartB": {"b": "data"}}),
         (adjacently_tagged_part_model_inst_a, {"type": "PartA", "value": {"a": 1}}),
         (adjacently_tagged_part_model_inst_b, {"type": "PartB", "value": {"b": "data"}}),
         (internally_tagged_part_model_inst_a, {"type": "PartA", "a": 1}),
@@ -367,30 +398,36 @@ def test_model_repr(model_instance: spec.Model, expected_value: str) -> None:
 
 # ================================
 @pytest.mark.parametrize(
-    ("model_class", "payload"),
+    ("model_class", "payload", "expected_error_msg"),
     [
-        (Simple2, {"c": "not a string"}),
-        (List, {"data": [1, 2, "3"]}),
+        (Simple2, {"c": "a string"}, "'Simple2.c' expected type 'int' but found 'str'"),
+        (List, {"data": [1, 2, "3"]}, "'List.data' expected type 'list[int]' but found 'list[int | str]'"),
     ],
 )
-def test_invalid_type(model_class: type[spec.Model], payload: dict[str, object]) -> None:
-    with pytest.raises(spec.InvalidType):
+def test_invalid_type(model_class: type[spec.Model], payload: dict[str, object], expected_error_msg: str) -> None:
+    with pytest.raises(spec.InvalidType) as exc_info:
         model_class(payload)
+
+    assert exc_info.value.args[0] == expected_error_msg
 
 
 def test_invalid_tag() -> None:
-    with pytest.raises(spec.MissingTypeName):
+    with pytest.raises(spec.MissingTypeName) as exc_info:
         spec.transparent(int | str, spec.tag("external"))
+
+    assert exc_info.value.args[0] == "'intOrstr.value' union type is missing a type name for '<class 'int'>'."
 
 
 class ValueValidator(spec.Model):
     x: Annotated[int, spec.validate(range(10).__contains__)]
 
 
-def test_invalid_value() -> None:
-    with pytest.raises(spec.FailedValidation):
+def test_passing_validator() -> None:
+    assert ValueValidator(x=5)
+
+
+def test_failing_validator() -> None:
+    with pytest.raises(spec.FailedValidation) as exc_info:
         ValueValidator(x=100)
 
-
-def test_valid_value() -> None:
-    ValueValidator(x=5)
+    assert exc_info.value.args[0] == "'ValueValidator.x' failed validation."

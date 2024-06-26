@@ -1,6 +1,26 @@
 import pytest
 
-from spec import Item, generate_type_repr_from_data, prettify_type
+from spec import Item, _generate_type_repr_from_data, _prettify_type, _UniqueList
+
+
+@pytest.mark.parametrize(
+    "items",
+    [
+        pytest.param([1, 2, 3, 4, 5, 5, 6, 6], id="integers"),
+        pytest.param(["hello", "world", "hello2", "hello", "world"], id="strings"),
+        pytest.param([int, str, float, tuple, str, int], id="builtin types"),
+    ],
+)
+def test_unique_list(items: list[object]) -> None:
+    unique_list = _UniqueList()
+
+    for item in items:
+        unique_list.append(item)
+
+    guaranteed_unique = set(items)
+
+    assert len(unique_list) == len(guaranteed_unique)
+    assert set(unique_list) == guaranteed_unique
 
 
 @pytest.mark.parametrize(
@@ -14,7 +34,7 @@ from spec import Item, generate_type_repr_from_data, prettify_type
     ],
 )
 def test_prettify_type(input_value: Item, expected_result: str) -> None:
-    assert prettify_type(input_value._to_internal()) == expected_result
+    assert _prettify_type(input_value._to_internal()) == expected_result
 
 
 @pytest.mark.parametrize(
@@ -28,4 +48,4 @@ def test_prettify_type(input_value: Item, expected_result: str) -> None:
     ],
 )
 def test_generate_type_repr_from_data(input_value: object, expected_result: str) -> None:
-    assert generate_type_repr_from_data(input_value) == expected_result
+    assert _generate_type_repr_from_data(input_value) == expected_result

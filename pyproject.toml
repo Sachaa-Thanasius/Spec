@@ -4,7 +4,8 @@ build-backend = "hatchling.build"
 
 [project]
 name = "spec"
-description = "A statically typed data structure validator with support for advance features."
+description = "A statically typed data structure validator with support for advanced features."
+version = "0.0.1"
 readme = "README.md"
 requires-python = ">=3.10"
 license = "MIT"
@@ -15,10 +16,10 @@ classifiers = [
     "Programming Language :: Python",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: Implementation :: CPython",
 ]
 dependencies = ["typing_extensions>=4.6.0; python_version < '3.13'"]
-dynamic = ["version"]
 
 [project.urls]
 Documentation = "https://github.com/zomatree/spec#readme"
@@ -32,14 +33,14 @@ path = "spec/__init__.py"
 # ==== Testing configuration.
 
 [tool.hatch.envs.hatch-test]
-dependencies = ["coverage[toml]~=7.4", "covdefaults", "pytest"]
+dependencies = ["coverage[toml]>=7.4", "covdefaults", "pytest"]
 installer = "pip"
 
 [[tool.hatch.envs.hatch-test.matrix]]
 python = ["3.10", "3.11", "3.12"]
 
 [tool.pytest.ini_options]
-addopts = ["--import-mode=importlib"]
+addopts = ["--import-mode=importlib", "--strict-config", "--strict-markers"]
 
 [tool.coverage.report]
 fail_under = 90
@@ -110,18 +111,8 @@ ignore = [
     # "E501",
     "ISC001",
     "ISC002",
-    # == Rules that conflict with the codebase style.
-    # Allow elif after return, raise, and continue, respectively.
-    "RET505",
-    "RET506",
-    "RET507",
-    # Allow catching Exception.
-    "BLE001",
-    # Allow passing in literal strings to exception constructors.
-    "TRY003",
-    "EM101",
-    "EM102",
-    "RUF012", # Assigning mutable default values at class scope is a thing.
+    # == Project-specific rules.
+    "RUF012", # Assigning mutable default values at class scope is a thing for dataclass-like structures.
 ]
 unfixable = [
     "ERA", # Prevent incorrectly detected comments from being automatically deleted.
@@ -130,8 +121,6 @@ unfixable = [
 [tool.ruff.lint.pyupgrade]
 keep-runtime-typing = true
 
-[tool.ruff.lint.per-file-ignores]
-"**/__init__.py" = ["F403", "F405"] # Ruff doesn't like star imports.
 
 # ==== Type-checking configuration.
 

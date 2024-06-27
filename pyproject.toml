@@ -122,9 +122,16 @@ unfixable = [
     "ERA", # Prevent incorrectly detected comments from being automatically deleted.
 ]
 
+[tool.ruff.per-file-ignores]
+"**/__init__.py" = [
+    "F403", # Ruff doesn't understand star imports in a package's __init__.py.
+]
+
 [tool.ruff.lint.pyupgrade]
 keep-runtime-typing = true
 
+[tool.ruff.lint.isort]
+combine-as-imports = true
 
 # ==== Type-checking configuration.
 

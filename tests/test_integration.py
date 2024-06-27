@@ -2,7 +2,7 @@
 # See pre_commit/clientlib.py.
 
 import re
-from typing import Annotated
+from typing import Annotated, Any
 
 import pytest
 
@@ -88,6 +88,7 @@ class ManifestHook(spec.Model):
     id: str
     name: str
     entry: str
+    # From here down: Keep in sync with MetaHook classes.
     language: Annotated[str, spec.validate(LANGUAGE_NAMES.__contains__)]
     alias: str = ""
     files: str = ""
@@ -105,32 +106,6 @@ class ManifestHook(spec.Model):
     require_serial: bool = False
     stages: Annotated[list[str], spec.validate(_is_subset_of_valid_stages).hook(_migrate_stages)] = []
     verbose: bool = False
-
-class MetaHook(spec.Model):
-    
-    ...
-
-class ConfigSchema(spec.Model):
-    minimum_pre_commit_version: Annotated[str, spec.validate(_is_le_max_version)] = "0"
-    # repos
-    default_install_hook_types: Annotated[list[str], spec.validate(_is_in_hook_types)] = ["pre-commit"]
-    # default_stages: list[str] = STAGES
-    files: Annotated[str, spec.validate(_is_valid_regex)] = ""
-    exclude: Annotated[str, spec.validate(_is_valid_regex)] = "^$"
-    fail_fast: bool = False
-
-
-def test_manifest_hook() -> None:
-    dct = {
-        "id": "fake-hook",
-        "name": "fake-hook",
-        "entry": "fake-hook",
-        "language": "system",
-        "stages": ["commit-msg", "push", "commit", "merge-commit"],
-    }
-    processed = ManifestHook(dct)
-
-    assert processed.stages == ["commit-msg", "pre-push", "pre-commit", "pre-merge-commit"]
 
 
 @pytest.mark.parametrize(
@@ -168,5 +143,46 @@ def test_manifest_hook() -> None:
         ],
     ],
 )
-def test_valid_manifests(manifest_obj: list[dict[str, str]] | list[dict[str, str | bool]]) -> None:
+def test_valid_manifests(manifest_obj: list[dict[str, Any]]) -> None:
     _ = [ManifestHook(item) for item in manifest_obj]
+
+
+# =========================================================================
+
+
+def disallow_entry(ek: set[str], ak: set[str], data: dict[str, Any]) -> None:
+    if "entry" in ek:
+        msg = "'entry' cannot be overriden."
+        raise spec.FailedValidation(msg)
+
+
+valid_meta_hook_ids = {"check-hooks-apply", "check-useless-excludes", "identity"}
+
+
+class MetaHook(spec.Model, with_extras="warn", on_extras=disallow_entry):
+    id: Annotated[str, spec.validate(valid_meta_hook_ids.__contains__)]
+    language: Annotated[str, spec.validate(lambda v: v == "system")] = "system"
+    # name: Annotated[str, spec.validate()]
+
+
+class ConfigSchema(spec.Model):
+    minimum_pre_commit_version: Annotated[str, spec.validate(_is_le_max_version)] = "0"
+    # repos
+    default_install_hook_types: Annotated[list[str], spec.validate(_is_in_hook_types)] = ["pre-commit"]
+    # default_stages: list[str] = STAGES
+    files: Annotated[str, spec.validate(_is_valid_regex)] = ""
+    exclude: Annotated[str, spec.validate(_is_valid_regex)] = "^$"
+    fail_fast: bool = False
+
+
+def test_manifest_hook() -> None:
+    dct = {
+        "id": "fake-hook",
+        "name": "fake-hook",
+        "entry": "fake-hook",
+        "language": "system",
+        "stages": ["commit-msg", "push", "commit", "merge-commit"],
+    }
+    processed = ManifestHook(dct)
+
+    assert processed.stages == ["commit-msg", "pre-push", "pre-commit", "pre-merge-commit"]

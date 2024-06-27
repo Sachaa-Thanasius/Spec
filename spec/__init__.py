@@ -8,6 +8,7 @@ import sys
 import types
 from collections.abc import Callable, Iterable
 from typing import (
+    TYPE_CHECKING,
     Annotated,
     Any,
     ClassVar,
@@ -18,9 +19,9 @@ from typing import (
     TypeGuard,
     Union,
     get_args,
+    get_origin as tp_get_origin,
     overload,
 )
-from typing import get_origin as tp_get_origin
 
 if sys.version_info >= (3, 13):  # pragma: >=3.13 cover
     from typing import TypeVar
@@ -47,6 +48,7 @@ __all__ = (
     "FailedValidation",
     "UnknownUnionKey",
     "MissingTypeName",
+    "ExtraKeysDisallowed",
     # == Item
     "Item",
     "rename",
@@ -111,6 +113,15 @@ class UnknownUnionKey(SpecError):
 
 class MissingTypeName(SpecError):
     """Exception that's raised when a tagged union model is missing a type name."""
+
+
+class ExtraKeysDisallowed(SpecError):
+    """Exception that's raised when a model prohibits extra keys but they're provided anyway."""
+
+    def __init__(self, extra_keys: Iterable[str], allowed_keys: Iterable[str]) -> None:
+        super().__init__(f"No extra keys are allowed in this model. Extra(s) found: {extra_keys}.")
+        self.extra_keys = extra_keys
+        self.allowed_keys = allowed_keys
 
 
 # endregion
@@ -361,15 +372,15 @@ def rename(key: str) -> Item:
 
 
 def default(default: Callable[[], _T_def]) -> Item[_T_def]:
-    return Item().default(default)
+    return Item().default(default)  # pyright: ignore[reportArgumentType, reportReturnType]
 
 
 def validate(validator: Callable[[_T_def], bool]) -> Item[_T_def]:
-    return Item().validate(validator)
+    return Item().validate(validator)  # pyright: ignore[reportArgumentType, reportReturnType]
 
 
 def hook(f: Callable[[_T_def], _T_def]) -> Item[_T_def]:
-    return Item().hook(f)
+    return Item().hook(f)  # pyright: ignore[reportArgumentType, reportReturnType]
 
 
 @overload
@@ -547,8 +558,7 @@ def convert_to_item(klass: type, key: str, annotation: Any, existing: Item | Non
     annotation: Any
         The annotation.
     existing: Item | None, optional
-        An existing Item to use when converting the annotation. Defaults to None. Used while recursively analyzing
-        an annotation.
+        An existing Item to use when converting the annotation. Defaults to None.
 
     Returns
     -------
@@ -583,7 +593,7 @@ def convert_to_item(klass: type, key: str, annotation: Any, existing: Item | Non
 
             if item._tag != "untagged":
                 if is_model(typ) and not inner_item._type_name:
-                    inner_item._type_name = typ._type_name
+                    inner_item._type_name = typ._spec_model_type_name
 
                 if not inner_item._type_name:
                     msg = f"'{klass.__name__}.{key}' union type is missing a type name for '{typ}'."
@@ -697,21 +707,61 @@ class ScreamingKebabCase(RenameBase):
 RenameScheme: TypeAlias = Default | Upper | CamelCase | PascalCase | KebabCase | ScreamingKebabCase
 
 
-class ImplementsRename(Protocol):
+class HasRename(Protocol):
     def rename(self, key: str) -> str: ...
 
 
 # endregion
 
 
+OnExtrasCallback: TypeAlias = Callable[[set[str], set[str], dict[str, Any]], Any]
+
+
 class Model:
-    _items: ClassVar[dict[str, _InternalItem]]
-    _type_name: ClassVar[str]
+    if TYPE_CHECKING:
+        _spec_model_items: ClassVar[dict[str, _InternalItem]]
+        _spec_model_type_name: ClassVar[str]
+        _spec_model_allow_extra: ClassVar[Literal["allow", "deny", "warn"]]
+        _spec_model_on_extras_callback: ClassVar[OnExtrasCallback | None] = None
 
-    def __init_subclass__(cls, *, type_name: str | None = None, rename: ImplementsRename = Default) -> None:
+    @overload
+    def __init_subclass__(
+        cls,
+        *,
+        type_name: str | None = None,
+        rename: HasRename = Default,
+        with_extras: Literal["allow", "deny"] = "allow",
+    ) -> None: ...
+    @overload
+    def __init_subclass__(
+        cls,
+        *,
+        type_name: str | None = None,
+        rename: HasRename = Default,
+        with_extras: Literal["warn"],
+        on_extras: OnExtrasCallback,
+    ) -> None: ...
+    def __init_subclass__(
+        cls,
+        *,
+        type_name: str | None = None,
+        rename: HasRename = Default,
+        with_extras: Literal["allow", "deny", "warn"] = "allow",
+        on_extras: OnExtrasCallback | None = None,
+    ) -> None:
+        if with_extras == "warn" and on_extras is None:
+            msg = "'extras_callback' is necessary to implement the warning mechanism."
+            raise ValueError(msg)
+
+        if with_extras in {"allow", "deny"} and on_extras is not None:
+            msg = "'extras_callback' will do nothing if extra keys are accepted or denied."
+            raise ValueError(msg)
+
+        cls._spec_model_type_name = type_name or cls.__name__
+        cls._spec_model_allow_extra = with_extras
+        cls._spec_model_on_extras_callback = on_extras
+
         items: dict[str, _InternalItem] = {}
-
-        cls._type_name = type_name or cls.__name__
 
         for key, annotation in cls.__annotations__.items():
             item = convert_to_item(cls, key, annotation)
@@ -726,7 +776,7 @@ class Model:
 
             items[internal_item.actual_key] = internal_item
 
-        cls._items = items
+        cls._spec_model_items = items
 
     @overload
     def __init__(self, /, **kwargs: object) -> None: ...
@@ -747,7 +797,16 @@ class Model:
 
         data = data or kwargs
 
-        for key, item in self._items.items():
+        if self._spec_model_allow_extra != "allow":
+            allowed_keys = set(self._spec_model_items)
+            extra_keys = set(data) - allowed_keys
+            if extra_keys:
+                if self._spec_model_allow_extra == "warn":
+                    assert self._spec_model_on_extras_callback
+                    self._spec_model_on_extras_callback(extra_keys, allowed_keys, data)
+                raise ExtraKeysDisallowed(extra_keys, allowed_keys)
+
+        for key, item in self._spec_model_items.items():
             if key not in data:
                 if item.default:
                     setattr(self, item.key, item.default())
@@ -756,7 +815,7 @@ class Model:
                     raise MissingRequiredKey(msg)
 
         for key, value in data.items():
-            if not (item := self._items.get(key)):
+            if not (item := self._spec_model_items.get(key)):
                 continue
 
             new_value = validate_value(item, self, value)
@@ -770,7 +829,7 @@ class Model:
         return self.to_dict() == other.to_dict()
 
     def __repr__(self) -> str:
-        items = [f"{item.key}={getattr(self, item.key)!r}" for item in self._items.values()]
+        items = [f"{item.key}={getattr(self, item.key)!r}" for item in self._spec_model_items.values()]
         return f"<{type(self).__name__} {' '.join(items)}>"
 
     def to_dict(self) -> dict[str, Any]:
@@ -778,7 +837,7 @@ class Model:
 
         return {
             item.actual_key: value_to_dict(getattr(self, item.key), self._tag_map, item)
-            for item in self._items.values()
+            for item in self._spec_model_items.values()
         }
 
 
@@ -787,13 +846,13 @@ class TransparentModel(Generic[_T], Model):
 
     def __init_subclass__(cls, *, item: Item | None = None) -> None:
         typ = get_args(get_original_bases(cls)[0])[0]
-        cls._items = {"value": convert_to_item(cls, "value", typ, item)._to_internal()}
+        cls._spec_model_items = {"value": convert_to_item(cls, "value", typ, item)._to_internal()}
 
     def __init__(self, data: object) -> None:
         super().__init__({"value": data})
 
     def to_dict(self) -> dict[str, Any]:
-        return value_to_dict(self.value, self._tag_map, self._items["value"])
+        return value_to_dict(self.value, self._tag_map, self._spec_model_items["value"])
 
     def __repr__(self) -> str:
         return f"<{type(self).__name__} {self.value!r}>"

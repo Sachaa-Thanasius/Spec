@@ -431,3 +431,13 @@ def test_failing_validator() -> None:
         ValueValidator(x=100)
 
     assert exc_info.value.args[0] == "'ValueValidator.x' failed validation."
+
+
+def test_denied_extra_keys() -> types.NoneType:
+    class NoExtra(spec.Model, with_extras="deny"):
+        thing: str
+
+    with pytest.raises(spec.ExtraKeysDisallowed) as exc_info:
+        NoExtra({"thing": "hello", "thing2": "world"})
+
+    assert exc_info.value.args[0] == "No extra keys are allowed in this model. Extra(s) found: {'thing2'}."

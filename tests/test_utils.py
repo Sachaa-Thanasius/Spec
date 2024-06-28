@@ -6,9 +6,9 @@ from spec import Item, _generate_type_repr_from_data, _prettify_type
 @pytest.mark.parametrize(
     ("input_value", "expected_result"),
     [
-        (Item(_typ=int, _key=""), "int"),
+        (Item(typ=int, key=""), "int"),
         (
-            Item(_typ=list, _key="", _internal_items=[Item(_typ=int, _key="")._to_internal()]),  # pyright: ignore [reportUnknownArgumentType]
+            Item(typ=list, key="", internal_items=[Item(typ=int, key="")._to_internal()]),  # pyright: ignore [reportUnknownArgumentType]
             "list[int]",
         ),
     ],

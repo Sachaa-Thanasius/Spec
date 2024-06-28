@@ -1,4 +1,3 @@
-import types
 from typing import Annotated
 
 import pytest
@@ -286,11 +285,11 @@ renaming_cases = pytest.mark.parametrize(
 
 @renaming_cases
 def test_renaming_schemes(renaming_scheme: type[spec.RenameScheme], attr_name: str, internal_attr_name: str) -> None:
-    GlobalRename = types.new_class(
+    GlobalRename = type(
         "GlobalRename",
         (spec.Model,),
-        {"rename": renaming_scheme},
-        lambda ns: ns.update(__annotations__={internal_attr_name: int}),
+        {"__annotations__": {internal_attr_name: int}},
+        rename=renaming_scheme,
     )
 
     instance = GlobalRename({attr_name: 1})
@@ -304,11 +303,11 @@ def test_invalid_input_when_rename_active(
     attr_name: str,
     internal_attr_name: str,
 ) -> None:
-    GlobalRename = types.new_class(
+    GlobalRename = type(
         "GlobalRename",
         (spec.Model,),
-        {"rename": renaming_scheme},
-        lambda ns: ns.update(__annotations__={internal_attr_name: int}),
+        {"__annotations__": {internal_attr_name: int}},
+        rename=renaming_scheme,
     )
 
     with pytest.raises(spec.MissingRequiredKey) as exc_info:
@@ -433,8 +432,8 @@ def test_failing_validator() -> None:
     assert exc_info.value.args[0] == "'ValueValidator.x' failed validation."
 
 
-def test_denied_extra_keys() -> types.NoneType:
-    class NoExtra(spec.Model, with_extras="deny"):
+def test_denied_extra_keys() -> None:
+    class NoExtra(spec.Model, extras_policy="deny"):
         thing: str
 
     with pytest.raises(spec.ExtraKeysDisallowed) as exc_info:

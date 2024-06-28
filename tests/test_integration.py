@@ -2,6 +2,8 @@
 # See pre_commit/clientlib.py.
 
 import re
+import shlex
+import sys
 from typing import Annotated, Any
 
 import pytest
@@ -46,6 +48,8 @@ _STAGES = {
     "push": "pre-push",
 }
 
+CONFIG_FILE = ".pre-commit-config.yaml"
+
 
 def _parse_version(version: str) -> tuple[int, ...]:
     return tuple(int(p) for p in version.split("."))
@@ -53,9 +57,6 @@ def _parse_version(version: str) -> tuple[int, ...]:
 
 def _is_le_max_version(version: str) -> bool:
     return _parse_version(version) <= _parse_version(VERSION)
-
-
-_is_type_tag = ALL_TAGS.__contains__
 
 
 def _migrate_stage(stage: str) -> str:
@@ -67,7 +68,7 @@ def _migrate_stages(stages: list[str]) -> list[str]:
 
 
 def _is_subset_of_valid_stages(potential_stages: list[str]) -> bool:
-    return {_migrate_stage(stage) for stage in potential_stages}.issubset(STAGES)
+    return set(_migrate_stages(potential_stages)).issubset(STAGES)
 
 
 def _is_in_hook_types(hook_types: list[str]) -> bool:
@@ -88,15 +89,14 @@ class ManifestHook(spec.Model):
     id: str
     name: str
     entry: str
-    # From here down: Keep in sync with MetaHook classes.
     language: Annotated[str, spec.validate(LANGUAGE_NAMES.__contains__)]
     alias: str = ""
     files: str = ""
     exclude: str = "^$"
-    types: Annotated[list[str], spec.validate(_is_type_tag)] = ["file"]
-    types_or: Annotated[list[str], spec.validate(_is_type_tag)] = []
-    additional_dependencies: list[str] = []
-    args: list[str] = []
+    types: Annotated[list[str], spec.validate(ALL_TAGS.__contains__).default(lambda: ["file"])]
+    types_or: Annotated[list[str], spec.validate(ALL_TAGS.__contains__).default(list)]
+    additional_dependencies: Annotated[list[str], spec.default(list)]
+    args: Annotated[list[str], spec.default(list)]
     always_run: bool = False
     fail_fast: bool = False
     pass_filenames: bool = True
@@ -104,7 +104,7 @@ class ManifestHook(spec.Model):
     language_version: str = DEFAULT
     log_file: str = ""
     require_serial: bool = False
-    stages: Annotated[list[str], spec.validate(_is_subset_of_valid_stages).hook(_migrate_stages)] = []
+    stages: Annotated[list[str] | None, spec.validate(_is_subset_of_valid_stages).hook(_migrate_stages)] = None
     verbose: bool = False
 
 
@@ -150,26 +150,65 @@ def test_valid_manifests(manifest_obj: list[dict[str, Any]]) -> None:
 # =========================================================================
 
 
-def disallow_entry(ek: set[str], ak: set[str], data: dict[str, Any]) -> None:
+def on_meta_extras(ek: set[str], ak: set[str], data: dict[str, Any]) -> None:
     if "entry" in ek:
         msg = "'entry' cannot be overriden."
         raise spec.FailedValidation(msg)
 
 
-valid_meta_hook_ids = {"check-hooks-apply", "check-useless-excludes", "identity"}
+def _entry(name: str) -> str:
+    return f"{shlex.quote(sys.executable)} -m pre_commit.meta_hooks.{name}"
 
 
-class MetaHook(spec.Model, with_extras="warn", on_extras=disallow_entry):
-    id: Annotated[str, spec.validate(valid_meta_hook_ids.__contains__)]
-    language: Annotated[str, spec.validate(lambda v: v == "system")] = "system"
-    # name: Annotated[str, spec.validate()]
+_check_hooks_apply_name = "check-hooks-apply"
+_check_useless_excludes_name = "check-useless-excludes"
+_identity_name = "identity"
+
+_config_file_pattern = f"^{re.escape(CONFIG_FILE)}$"
+
+
+class BaseMetaHook(ManifestHook, extras_policy=on_meta_extras):
+    language: Annotated[str, spec.validate("system".__eq__)] = "system"
+
+
+class CheckHooksApplyMetaHook(BaseMetaHook):
+    name: Annotated[str, spec.validate(_check_hooks_apply_name.__eq__)] = _check_hooks_apply_name
+    files: Annotated[str, spec.validate(_config_file_pattern.__eq__)]
+    entry: Annotated[str, spec.validate(_entry("check_hooks_apply").__eq__)]
+
+
+class CheckUselessExcludesMetaHook(BaseMetaHook):
+    name: Annotated[str, spec.validate(_check_useless_excludes_name.__eq__)] = _check_useless_excludes_name
+    files: Annotated[str, spec.validate(_config_file_pattern.__eq__)]
+    entry: Annotated[str, spec.validate(_entry("check-useless-excludes").__eq__)]
+
+
+class IdentityMetaHook(BaseMetaHook):
+    name: Annotated[str, spec.validate(_identity_name.__eq__)] = _identity_name
+    verbose: bool = True
+    entry: Annotated[str, spec.validate(_entry("check-useless-excludes").__eq__)]
+
+
+class MetaHook(spec.TransparentModel[CheckHooksApplyMetaHook | CheckUselessExcludesMetaHook | IdentityMetaHook]):
+    pass
+
+
+class ConfigHook(ManifestHook): ...
+
+
+class LocalHook(ManifestHook): ...
+
+
+class DefaultLanguageVersion(spec.Model, extras_policy="deny"):
+    pass
 
 
 class ConfigSchema(spec.Model):
     minimum_pre_commit_version: Annotated[str, spec.validate(_is_le_max_version)] = "0"
     # repos
-    default_install_hook_types: Annotated[list[str], spec.validate(_is_in_hook_types)] = ["pre-commit"]
-    # default_stages: list[str] = STAGES
+    default_install_hook_types: Annotated[list[str], spec.validate(_is_in_hook_types).default(lambda: ["pre-commit"])]
+    default_language_version: DefaultLanguageVersion
+    default_stages: Annotated[list[str], spec.default(lambda: list(STAGES))]
     files: Annotated[str, spec.validate(_is_valid_regex)] = ""
     exclude: Annotated[str, spec.validate(_is_valid_regex)] = "^$"
     fail_fast: bool = False

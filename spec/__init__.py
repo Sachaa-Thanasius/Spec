@@ -2,8 +2,6 @@
 #
 # SPDX-License-Identifier: MIT
 
-from __future__ import annotations
-
 import sys
 import types
 from collections.abc import Callable, Iterable
@@ -40,7 +38,7 @@ else:  # pragma: <3.11 cover
 
 
 __all__ = (
-    # == Exceptions
+    # Exceptions
     "SpecError",
     "MissingArgument",
     "MissingRequiredKey",
@@ -49,7 +47,7 @@ __all__ = (
     "UnknownUnionKey",
     "MissingTypeName",
     "ExtraKeysDisallowed",
-    # == Item
+    # Item
     "Item",
     "rename",
     "default",
@@ -57,7 +55,7 @@ __all__ = (
     "hook",
     "tag",
     "type_name",
-    # == Model
+    # Model
     "is_model",
     "Model",
     "TransparentModel",
@@ -96,7 +94,13 @@ class InvalidType(SpecError):
     """Exception that's raised when the type for a given value doesn't match the expected type from the Model."""
 
     @classmethod
-    def from_expected(cls, model: Model, item: _InternalItem, root_item: _InternalItem, root_value: object) -> Self:
+    def from_expected(
+        cls,
+        model: "Model",
+        item: "_InternalItem",
+        root_item: "_InternalItem",
+        root_value: object,
+    ) -> Self:
         return cls(
             f"'{type(model).__name__}.{item.key}' expected type '{_prettify_type(root_item)}'"
             f" but found '{_generate_type_repr_from_data(root_value)}'"
@@ -145,6 +149,10 @@ def _is_union(typ: type) -> bool:
     return (origin is Union) or (origin is types.UnionType)
 
 
+def _get_type_name(v: type) -> str:
+    return getattr(v, "_type_name", v.__name__)
+
+
 def get_origin(typ: type) -> Any:
     """Get the unsubscripted version of a type, or just the type if it doesn't support subscripting or wasn't
     subscripted.
@@ -167,7 +175,7 @@ def get_origin(typ: type) -> Any:
     return tp_get_origin(typ) or typ
 
 
-def _prettify_type(item: _InternalItem) -> str:
+def _prettify_type(item: "_InternalItem") -> str:
     # Reminder: item.typ is only a list when tags are involved.
     if not isinstance(item.typ, list) and (generics := item.internal_items):
         generic_str = f"[{', '.join([_prettify_type(generic) for generic in generics])}]"
@@ -229,7 +237,7 @@ class _InternalItem(Generic[_T_def]):
         key: str,
         rename: str | None,
         typ: type[_T_def],
-        internal_items: list[_InternalItem],
+        internal_items: list["_InternalItem"],
         default: Callable[[], _T_def] | None,
         validate: Callable[[_T_def], bool],
         hook: Callable[[_T_def], _T_def],
@@ -275,29 +283,29 @@ class Item(Generic[_T_def]):
 
     def __init__(
         self,
-        _key: str | None = None,
-        _rename: str | None = None,
-        _typ: type[_T_def] | None = None,
-        _internal_items: list[_InternalItem] | None = None,
-        _default: Callable[[], _T_def] | None = None,
-        _modified: list[str] = MISSING,
-        _validate: Callable[[_T_def], bool] = lambda _: True,
-        _hook: Callable[[_T_def], _T_def] = lambda x: x,
-        _tag: Literal["untagged", "external", "internal", "adjacent"] = "untagged",
-        _tag_info: dict[str, Any] = MISSING,
-        _type_name: str | None = None,
+        key: str | None = None,
+        rename: str | None = None,
+        typ: type[_T_def] | None = None,
+        internal_items: list[_InternalItem] | None = None,
+        default: Callable[[], _T_def] | None = None,
+        modified: list[str] = MISSING,
+        validate: Callable[[_T_def], bool] = lambda _: True,
+        hook: Callable[[_T_def], _T_def] = lambda x: x,
+        tag: Literal["untagged", "external", "internal", "adjacent"] = "untagged",
+        tag_info: dict[str, Any] = MISSING,
+        type_name: str | None = None,
     ) -> None:
-        self._key: str | None = _key
-        self._rename: str | None = _rename
-        self._typ: type[_T_def] | None = _typ
-        self._internal_items: list[_InternalItem] | None = _internal_items
-        self._default: Callable[[], _T_def] | None = _default
-        self._modified: list[str] = _modified if _modified is not MISSING else []
-        self._validate: Callable[[_T_def], bool] = _validate
-        self._hook: Callable[[_T_def], _T_def] = _hook
-        self._tag: Literal["untagged", "external", "internal", "adjacent"] = _tag
-        self._tag_info: dict[str, Any] = _tag_info if _tag_info is not MISSING else {}
-        self._type_name: str | None = _type_name
+        self._key: str | None = key
+        self._rename: str | None = rename
+        self._typ: type[_T_def] | None = typ
+        self._internal_items: list[_InternalItem] | None = internal_items
+        self._default: Callable[[], _T_def] | None = default
+        self._modified: list[str] = modified if modified is not MISSING else []
+        self._validate: Callable[[_T_def], bool] = validate
+        self._hook: Callable[[_T_def], _T_def] = hook
+        self._tag: Literal["untagged", "external", "internal", "adjacent"] = tag
+        self._tag_info: dict[str, Any] = tag_info if tag_info is not MISSING else {}
+        self._type_name: str | None = type_name
 
     def _to_internal(self) -> _InternalItem[_T_def]:
         assert self._key is not None
@@ -412,7 +420,7 @@ def type_name(name: str) -> Item:
 # region Model
 
 
-def is_model(obj: object) -> TypeGuard[type[Model]]:
+def is_model(obj: object) -> TypeGuard[type["Model"]]:
     """Return True if the object is a subclass of spec.Model."""
 
     return isinstance(obj, type) and issubclass(obj, Model)
@@ -424,7 +432,7 @@ def _is_list_of_internal_items(obj: object) -> TypeGuard[list[_InternalItem]]:
 
 def validate_value(
     item: _InternalItem,
-    model: Model,
+    model: "Model",
     value: Any,
     root_item: _InternalItem | None = None,
     root_value: Any = MISSING,
@@ -579,7 +587,7 @@ def convert_to_item(klass: type, key: str, annotation: Any, existing: Item | Non
         item = existing
     else:
         # Base case.
-        item = Item(_key=key, _typ=annotation)
+        item = Item(key=key, typ=annotation)
 
     if _is_union(origin):
         # Provide None as a default if Optional is in the annotation and no default value was set.
@@ -721,47 +729,27 @@ class Model:
     if TYPE_CHECKING:
         _spec_model_items: ClassVar[dict[str, _InternalItem]]
         _spec_model_type_name: ClassVar[str]
-        _spec_model_allow_extra: ClassVar[Literal["allow", "deny", "warn"]]
-        _spec_model_on_extras_callback: ClassVar[OnExtrasCallback | None] = None
+        _spec_model_extras_policy: ClassVar[Literal["allow", "deny"]] | OnExtrasCallback
 
-    @overload
     def __init_subclass__(
         cls,
         *,
         type_name: str | None = None,
         rename: HasRename = Default,
-        with_extras: Literal["allow", "deny"] = "allow",
-    ) -> None: ...
-    @overload
-    def __init_subclass__(
-        cls,
-        *,
-        type_name: str | None = None,
-        rename: HasRename = Default,
-        with_extras: Literal["warn"],
-        on_extras: OnExtrasCallback,
-    ) -> None: ...
-    def __init_subclass__(
-        cls,
-        *,
-        type_name: str | None = None,
-        rename: HasRename = Default,
-        with_extras: Literal["allow", "deny", "warn"] = "allow",
-        on_extras: OnExtrasCallback | None = None,
+        extras_policy: Literal["allow", "deny"] | OnExtrasCallback = "allow",
     ) -> None:
-        if with_extras == "warn" and on_extras is None:
-            msg = "'extras_callback' is necessary to implement the warning mechanism."
-            raise ValueError(msg)
-
-        if with_extras in {"allow", "deny"} and on_extras is not None:
-            msg = "'extras_callback' will do nothing if extra keys are accepted or denied."
+        if extras_policy not in {"allow", "deny"} and not callable(extras_policy):
+            msg = "'with_extras' must either be 'allow', 'deny', or a custom callback function."
             raise ValueError(msg)
 
         cls._spec_model_type_name = type_name or cls.__name__
-        cls._spec_model_allow_extra = with_extras
-        cls._spec_model_on_extras_callback = on_extras
+        cls._spec_model_extras_policy = extras_policy
 
         items: dict[str, _InternalItem] = {}
+
+        for base in reversed(cls.__mro__):
+            if issubclass(base, Model) and (base_items := getattr(base, "_spec_model_items", None)):
+                items.update(base_items)
 
         for key, annotation in cls.__annotations__.items():
             item = convert_to_item(cls, key, annotation)
@@ -779,12 +767,12 @@ class Model:
         cls._spec_model_items = items
 
     @overload
-    def __init__(self, /, **kwargs: object) -> None: ...
+    def __init__(self, /, **kwargs: Any) -> None: ...
 
     @overload
     def __init__(self, data: dict[str, Any] | None = None, /) -> None: ...
 
-    def __init__(self, data: dict[str, Any] | None = None, /, **kwargs: object) -> None:
+    def __init__(self, data: dict[str, Any] | None = None, /, **kwargs: Any) -> None:
         self._tag_map: dict[str, str] = {}
 
         if data is None and not kwargs:
@@ -797,14 +785,14 @@ class Model:
 
         data = data or kwargs
 
-        if self._spec_model_allow_extra != "allow":
+        if self._spec_model_extras_policy != "allow":
             allowed_keys = set(self._spec_model_items)
             extra_keys = set(data) - allowed_keys
             if extra_keys:
-                if self._spec_model_allow_extra == "warn":
-                    assert self._spec_model_on_extras_callback
-                    self._spec_model_on_extras_callback(extra_keys, allowed_keys, data)
-                raise ExtraKeysDisallowed(extra_keys, allowed_keys)
+                if self._spec_model_extras_policy != "deny":
+                    self._spec_model_extras_policy(extra_keys, allowed_keys, data)
+                else:
+                    raise ExtraKeysDisallowed(extra_keys, allowed_keys)
 
         for key, item in self._spec_model_items.items():
             if key not in data:
@@ -821,6 +809,9 @@ class Model:
             new_value = validate_value(item, self, value)
 
             setattr(self, item.key, new_value)
+
+        if post_init := getattr(self, "__post_init__", None):
+            post_init()
 
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, type(self)):
@@ -859,13 +850,10 @@ class TransparentModel(Generic[_T], Model):
 
 
 def transparent(typ: type[_T] | Any, item: Item | None = None) -> type[TransparentModel[_T]]:
-    def _get_name(v: type) -> str:
-        return getattr(v, "_type_name", v.__name__)
-
     if _is_union(typ):  # noqa: SIM108 # Readability.
-        name = "Or".join([_get_name(t) for t in get_args(typ)])
+        name = "Or".join([_get_type_name(t) for t in get_args(typ)])
     else:
-        name = _get_name(typ)
+        name = _get_type_name(typ)
 
     return types.new_class(name, (TransparentModel[typ],), {"item": item})
 

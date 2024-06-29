@@ -433,10 +433,10 @@ def test_failing_validator() -> None:
 
 
 def test_denied_extra_keys() -> None:
-    class NoExtra(spec.Model, extras_policy="deny"):
+    class NoExtra(spec.Model, allow_extras=False):
         thing: str
 
-    with pytest.raises(spec.ExtraKeysDisallowed) as exc_info:
+    with pytest.raises(spec.NoExtraKeysAllowed) as exc_info:
         NoExtra({"thing": "hello", "thing2": "world"})
 
     assert exc_info.value.args[0] == "No extra keys are allowed in this model. Extra(s) found: {'thing2'}."

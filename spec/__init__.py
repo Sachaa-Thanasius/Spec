@@ -2,11 +2,16 @@
 #
 # SPDX-License-Identifier: MIT
 
+# TODO: Check if type_name, tag_info. and rename already cover parts of tagging I thought were missing. Also add tests.
+# TODO: Get inspiration from msgspec.
+# TODO: Consider making MISSING part of the public API for use as default value for model members that aren't required.
+# TODO: Consider adding a call to __post_init__ to allow more complex validation.
+# TODO: Consider imitating some of TypedDict's API for making items required and not required, e.g. total=False.
+
 import sys
 import types
 from collections.abc import Callable, Iterable
 from typing import (
-    TYPE_CHECKING,
     Annotated,
     Any,
     ClassVar,
@@ -46,7 +51,7 @@ __all__ = (
     "FailedValidation",
     "UnknownUnionKey",
     "MissingTypeName",
-    "ExtraKeysDisallowed",
+    "NoExtraKeysAllowed",
     # Item
     "Item",
     "rename",
@@ -55,11 +60,6 @@ __all__ = (
     "hook",
     "tag",
     "type_name",
-    # Model
-    "is_model",
-    "Model",
-    "TransparentModel",
-    "transparent",
     # Renaming schemes
     "RenameBase",
     "Default",
@@ -69,13 +69,18 @@ __all__ = (
     "KebabCase",
     "ScreamingKebabCase",
     "RenameScheme",
+    # Model
+    "is_model",
+    "Model",
+    "TransparentModel",
+    "transparent",
 )
 
 _T = TypeVar("_T")
 _T_def = TypeVar("_T_def", default=Any)
 
 
-# region Exceptions
+# region -------- Exceptions --------
 
 
 class SpecError(Exception):
@@ -93,15 +98,8 @@ class MissingRequiredKey(SpecError):
 class InvalidType(SpecError):
     """Exception that's raised when the type for a given value doesn't match the expected type from the Model."""
 
-    @classmethod
-    def from_expected(
-        cls,
-        model: "Model",
-        item: "_InternalItem",
-        root_item: "_InternalItem",
-        root_value: object,
-    ) -> Self:
-        return cls(
+    def __init__(self, model: "Model", item: "_InternalItem", root_item: "_InternalItem", root_value: object):
+        super().__init__(
             f"'{type(model).__name__}.{item.key}' expected type '{_prettify_type(root_item)}'"
             f" but found '{_generate_type_repr_from_data(root_value)}'"
         )
@@ -119,7 +117,7 @@ class MissingTypeName(SpecError):
     """Exception that's raised when a tagged union model is missing a type name."""
 
 
-class ExtraKeysDisallowed(SpecError):
+class NoExtraKeysAllowed(SpecError):
     """Exception that's raised when a model prohibits extra keys but they're provided anyway."""
 
     def __init__(self, extra_keys: Iterable[str], allowed_keys: Iterable[str]) -> None:
@@ -130,7 +128,8 @@ class ExtraKeysDisallowed(SpecError):
 
 # endregion
 
-# region Utilities
+
+# region -------- Utilities --------
 
 
 class _Missing:
@@ -150,7 +149,7 @@ def _is_union(typ: type) -> bool:
 
 
 def _get_type_name(v: type) -> str:
-    return getattr(v, "_type_name", v.__name__)
+    return getattr(v, "_spec_model_type_name", v.__name__)
 
 
 def get_origin(typ: type) -> Any:
@@ -215,7 +214,8 @@ def _generate_type_repr_from_data(data: object) -> str:
 
 # endregion
 
-# region Items
+
+# region -------- Items --------
 
 
 class _InternalItem(Generic[_T_def]):
@@ -417,7 +417,8 @@ def type_name(name: str) -> Item:
 
 # endregion
 
-# region Model
+
+# region -------- Main logic --------
 
 
 def is_model(obj: object) -> TypeGuard[type["Model"]]:
@@ -458,7 +459,7 @@ def validate_value(
                     else:
                         break
                 else:
-                    raise InvalidType.from_expected(model, item, root_item, root_value)
+                    raise InvalidType(model, item, root_item, root_value)
 
             case ("external", dict()):
                 try:
@@ -485,7 +486,7 @@ def validate_value(
                 try:
                     key, content = value[tag_key], value[content_key]  # pyright: ignore [reportUnknownVariableType]
                 except KeyError:
-                    raise InvalidType.from_expected(model, item, root_item, root_value) from None
+                    raise InvalidType(model, item, root_item, root_value) from None
 
                 for internal_item in item.typ:
                     assert internal_item.type_name
@@ -519,11 +520,11 @@ def validate_value(
                     raise UnknownUnionKey(msg)
 
             case ("external" | "adjacent" | "internal", _):
-                raise InvalidType.from_expected(model, item, root_item, root_value)
+                raise InvalidType(model, item, root_item, root_value)
 
     elif not isinstance(value, origin):
         # Base case: This is where we go if the type of the value doesn't match its annotation.
-        raise InvalidType.from_expected(model, item, root_item, root_value)
+        raise InvalidType(model, item, root_item, root_value)
 
     if origin in (list, set, tuple):
         internal_item = item.internal_items[0]
@@ -660,7 +661,10 @@ def value_to_dict(value: Any, tag_map: dict[str, Any], item: _InternalItem) -> A
     return output
 
 
-# region Renaming schemes
+# endregion
+
+
+# region ---- Renaming schemes ----
 
 
 class RenameBase:
@@ -722,31 +726,34 @@ class HasRename(Protocol):
 # endregion
 
 
+# region -------- Model --------
+
+
 OnExtrasCallback: TypeAlias = Callable[[set[str], set[str], dict[str, Any]], Any]
 
 
 class Model:
-    if TYPE_CHECKING:
-        _spec_model_items: ClassVar[dict[str, _InternalItem]]
-        _spec_model_type_name: ClassVar[str]
-        _spec_model_extras_policy: ClassVar[Literal["allow", "deny"]] | OnExtrasCallback
+    _spec_model_items: ClassVar[dict[str, _InternalItem]]
+    _spec_model_type_name: ClassVar[str]
+    _spec_model_extras_policy: ClassVar[bool | OnExtrasCallback]
 
     def __init_subclass__(
         cls,
         *,
         type_name: str | None = None,
         rename: HasRename = Default,
-        extras_policy: Literal["allow", "deny"] | OnExtrasCallback = "allow",
+        allow_extras: bool | OnExtrasCallback = True,
     ) -> None:
-        if extras_policy not in {"allow", "deny"} and not callable(extras_policy):
-            msg = "'with_extras' must either be 'allow', 'deny', or a custom callback function."
-            raise ValueError(msg)
+        if not (isinstance(allow_extras, bool) or callable(allow_extras)):
+            msg = "'allow' must either be True, False, or a custom callback function."
+            raise TypeError(msg)
 
         cls._spec_model_type_name = type_name or cls.__name__
-        cls._spec_model_extras_policy = extras_policy
+        cls._spec_model_extras_policy = allow_extras
 
         items: dict[str, _InternalItem] = {}
 
+        # Allow inheritance of items, as well as overriding them.
         for base in reversed(cls.__mro__):
             if issubclass(base, Model) and (base_items := getattr(base, "_spec_model_items", None)):
                 items.update(base_items)
@@ -785,14 +792,14 @@ class Model:
 
         data = data or kwargs
 
-        if self._spec_model_extras_policy != "allow":
+        if self._spec_model_extras_policy is not True:
             allowed_keys = set(self._spec_model_items)
             extra_keys = set(data) - allowed_keys
             if extra_keys:
-                if self._spec_model_extras_policy != "deny":
+                if self._spec_model_extras_policy is not False:
                     self._spec_model_extras_policy(extra_keys, allowed_keys, data)
                 else:
-                    raise ExtraKeysDisallowed(extra_keys, allowed_keys)
+                    raise NoExtraKeysAllowed(extra_keys, allowed_keys)
 
         for key, item in self._spec_model_items.items():
             if key not in data:
@@ -842,11 +849,11 @@ class TransparentModel(Generic[_T], Model):
     def __init__(self, data: object) -> None:
         super().__init__({"value": data})
 
-    def to_dict(self) -> dict[str, Any]:
-        return value_to_dict(self.value, self._tag_map, self._spec_model_items["value"])
-
     def __repr__(self) -> str:
         return f"<{type(self).__name__} {self.value!r}>"
+
+    def to_dict(self) -> dict[str, Any]:
+        return value_to_dict(self.value, self._tag_map, self._spec_model_items["value"])
 
 
 def transparent(typ: type[_T] | Any, item: Item | None = None) -> type[TransparentModel[_T]]:

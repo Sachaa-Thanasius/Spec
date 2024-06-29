@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: MIT
 
 # TODO: Check if type_name, tag_info. and rename already cover parts of tagging I thought were missing. Also add tests.
-# TODO: Get inspiration from msgspec.
+# TODO: Get inspiration from msgspec, e.g. msgspec.UNSET.
 # TODO: Consider making MISSING part of the public API for use as default value for model members that aren't required.
 # TODO: Consider adding a call to __post_init__ to allow more complex validation.
 # TODO: Consider imitating some of TypedDict's API for making items required and not required, e.g. total=False.

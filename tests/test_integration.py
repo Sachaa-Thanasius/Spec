@@ -8,7 +8,7 @@ and the schema comes from there as well. All rights to Anthony Sottile for those
 import re
 import shlex
 import sys
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 import pytest
 
@@ -254,15 +254,30 @@ def warn_if_mutable_rev(rev: str) -> str:
         )
     return rev
 
-class MetaRepositoryConfig(spec.Model):
-    ...
-class RepositoryConfig(spec.Model, allow_extras=warn_extras_in_repo_config):
+
+class MetaHookRepositoryConfig(spec.Model):
+    repo: Literal["meta"]
+    hooks: list[MetaHook]
+
+
+class LocalHookRepositoryConfig(spec.Model):
+    repo: Literal["local"]
+    hooks: list[LocalHook]
+
+
+class ConfigHookRepositoryConfig(spec.Model):
+    repo: str
+    hooks: list[ConfigHook]
+    rev: Annotated[str | None, spec.hook(warn_if_mutable_rev)] = None
+
+
+class RepositoryConfig(
+    spec.TransparentModel[MetaHookRepositoryConfig | LocalHookRepositoryConfig | ConfigHookRepositoryConfig]
+):
     # TODO: Find a way to restrict the specific type of AnyHook based on the value of repo. Maybe __post_init__ would
     # work, even if that can't stop the validation early?
-    repo: str
-    hooks: list[AnyHook]
     # TODO: Restrict rev as well to only be present if not a local or meta hook, and otherwise be absent.
-    rev: Annotated[str | None, spec.hook(warn_if_mutable_rev)] = None
+    pass
 
 
 class DefaultLanguageVersion(spec.Model, allow_extras=False):
@@ -285,7 +300,7 @@ def warn_extras_in_config_root(ek: set[str], ak: set[str], dct: dict[str, Any]) 
 
 class ConfigSchema(spec.Model, allow_extras=warn_extras_in_config_root):
     minimum_pre_commit_version: Annotated[str, spec.validate(is_le_max_version)] = "0"
-    # TODO: repos: Allow array of mixed of meta, local, and config hooks?
+    repos: list[RepositoryConfig]
     default_install_hook_types: Annotated[list[str], spec.validate(is_in_hook_types).default(lambda: ["pre-commit"])]
     default_language_version: DefaultLanguageVersion
     default_stages: Annotated[list[str], spec.default(lambda: list(VALID_STAGES))]

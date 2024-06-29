@@ -13,6 +13,7 @@ from typing import Annotated, Any, Literal
 import pytest
 
 import spec
+from spec import NODEFAULT, NoDefault
 
 # region -------- Constants --------
 
@@ -68,7 +69,7 @@ is_file_tag = ALL_FILE_TAGS.__contains__
 
 
 def _parse_version(version: str) -> tuple[int, ...]:
-    return tuple(int(p) for p in version.split("."))
+    return tuple([int(p) for p in version.split(".")])
 
 
 _PARSED_VERSION = _parse_version(PRE_COMMIT_VERSION)
@@ -150,19 +151,26 @@ class ManifestHook(spec.Model):
     language_version: str = PRE_COMMIT_VERSION
     log_file: str = ""
     require_serial: bool = False
-    stages: Annotated[list[str] | None, spec.validate(is_subset_of_stages).hook(migrate_stages)] = None
+    stages: Annotated[list[str], spec.validate(is_subset_of_stages).hook(migrate_stages).default(list)]
     verbose: bool = False
 
 
+# -- Meta hook constraints.
+
 _lang_meta_constraint = "system"
+
+_name_cha_meta_constraint = "check-hooks-apply"
+_entry_cha_meta_constraint = meta_entry("check_hooks_apply")
+
+_name_cue_meta_constraint = "check-useless-excludes"
+_entry_cue_meta_constraint = meta_entry("check_useless_excludes")
+
+_name_id_meta_constraint = "identity"
+_entry_id_meta_constraint = meta_entry("identity")
 
 
 class BaseMetaHook(ManifestHook):
     language: Annotated[str, spec.validate(_lang_meta_constraint.__eq__)] = _lang_meta_constraint
-
-
-_name_cha_meta_constraint = "check-hooks-apply"
-_entry_cha_meta_constraint = meta_entry("check_hooks_apply")
 
 
 class CheckHooksApplyMetaHook(BaseMetaHook):
@@ -171,18 +179,10 @@ class CheckHooksApplyMetaHook(BaseMetaHook):
     entry: Annotated[str, spec.validate(_entry_cha_meta_constraint.__eq__)] = _entry_cha_meta_constraint
 
 
-_name_cue_meta_constraint = "check-useless-excludes"
-_entry_cue_meta_constraint = meta_entry("check_useless_excludes")
-
-
 class CheckUselessExcludesMetaHook(BaseMetaHook):
     name: Annotated[str, spec.validate(_name_cue_meta_constraint.__eq__)] = _name_cue_meta_constraint
     files: Annotated[str, spec.validate(CONFIG_FILE_REGEX.__eq__)] = CONFIG_FILE_REGEX
     entry: Annotated[str, spec.validate(_entry_cue_meta_constraint.__eq__)] = _entry_cue_meta_constraint
-
-
-_name_id_meta_constraint = "identity"
-_entry_id_meta_constraint = meta_entry("identity")
 
 
 class IdentityMetaHook(BaseMetaHook):
@@ -197,48 +197,49 @@ class MetaHook(spec.TransparentModel[CheckHooksApplyMetaHook | CheckUselessExclu
 
 class ConfigHook(ManifestHook):
     # NOTE: Excluding id, stages, files, and exclude, copy and keep in sync everything from ManifestHook but optional
-    # and without defaults? Breaks Liskov, hence the pyright: ignores, but this isn't meant to be normal class
-    # inheritance anyway. Not sure how else to transfer annotations/attributes in a way a type-checker will understand.
-    # TODO: Examine Transparent for hints at a better way?
-    minimum_pre_commit_version: Annotated[str | None, spec.validate(is_le_max_version)] = None  # pyright: ignore
-    name: str | None = None  # pyright: ignore
-    entry: str | None = None  # pyright: ignore
-    language: Annotated[str | None, spec.validate(is_language)] = None  # pyright: ignore
-    alias: str | None = None  # pyright: ignore
-    types: Annotated[list[str] | None, spec.validate(is_file_tag)] = None  # pyright: ignore
-    types_or: Annotated[list[str] | None, spec.validate(is_file_tag)] = None  # pyright: ignore
-    additional_dependencies: list[str] | None = None  # pyright: ignore
-    args: list[str] | None = None  # pyright: ignore
-    always_run: bool | None = None  # pyright: ignore
-    fail_fast: bool | None = None  # pyright: ignore
-    pass_filenames: bool | None = None  # pyright: ignore
-    description: str | None = None  # pyright: ignore
-    language_version: str | None = None  # pyright: ignore
-    log_file: str | None = None  # pyright: ignore
-    require_serial: bool | None = None  # pyright: ignore
-    stages: Annotated[list[str] | None, spec.validate(is_subset_of_stages).hook(migrate_stages)] = None
-    verbose: bool | None = None  # pyright: ignore
+    # and without defaults.
+    # FIXME: Breaks Liskov, hence the pyright: ignores, but this isn't meant to be normal class inheritance anyway.
+    # Might be worth not inheriting from ManifestHook and just keeping a note to stay in sync. Then again, that would be
+    # another case with with multiple sources of truth that need to be assessed and possibly changed together when
+    # needed.
+    minimum_pre_commit_version: Annotated[str | NoDefault, spec.validate(is_le_max_version)] = NODEFAULT  # pyright: ignore
+    name: str | NoDefault = NODEFAULT  # pyright: ignore
+    entry: str | NoDefault = NODEFAULT  # pyright: ignore
+    language: Annotated[str | NoDefault, spec.validate(is_language)] = NODEFAULT  # pyright: ignore
+    alias: str | NoDefault = NODEFAULT  # pyright: ignore
+    types: Annotated[list[str] | NoDefault, spec.validate(is_file_tag)] = NODEFAULT  # pyright: ignore
+    types_or: Annotated[list[str] | NoDefault, spec.validate(is_file_tag)] = NODEFAULT  # pyright: ignore
+    additional_dependencies: list[str] | NoDefault = NODEFAULT  # pyright: ignore
+    args: list[str] | NoDefault = NODEFAULT  # pyright: ignore
+    always_run: bool | NoDefault = NODEFAULT  # pyright: ignore
+    fail_fast: bool | NoDefault = NODEFAULT  # pyright: ignore
+    pass_filenames: bool | NoDefault = NODEFAULT  # pyright: ignore
+    description: str | NoDefault = NODEFAULT  # pyright: ignore
+    language_version: str | NoDefault = NODEFAULT  # pyright: ignore
+    log_file: str | NoDefault = NODEFAULT  # pyright: ignore
+    require_serial: bool | NoDefault = NODEFAULT  # pyright: ignore
+    stages: Annotated[list[str] | NoDefault, spec.validate(is_subset_of_stages).hook(migrate_stages)] = NODEFAULT  # pyright: ignore
+    verbose: bool | NoDefault = NODEFAULT  # pyright: ignore
 
-    # NOTE: Ensure these match the corresponding members in ManifestHook, with the only change being the validator.
+    # NOTE: Keep in sync with the corresponding members in ManifestHook, with the only change being the validator.
     files: Annotated[str, spec.validate(is_sensible_top_level_regex)] = ""
     exclude: Annotated[str, spec.validate(is_sensible_top_level_regex)] = "^$"
 
 
 class LocalHook(ManifestHook):
-    # NOTE: Ensure these match the corresponding members in ManifestHook, with the only change being the validator.
+    # NOTE: Keep in sync with the corresponding members in ManifestHook, with the only change being the validator.
     files: Annotated[str, spec.validate(is_sensible_top_level_regex)] = ""
     exclude: Annotated[str, spec.validate(is_sensible_top_level_regex)] = "^$"
-
-
-class AnyHook(spec.TransparentModel[MetaHook | ConfigHook | LocalHook]):
-    pass
 
 
 # endregion
 
 
-def warn_extras_in_repo_config(ek: set[str], ak: set[str], dct: dict[str, Any]) -> None:
-    print(f"Unexpected key(s) present on {dct['repo']}: {', '.join(ek)}")
+# region -------- Top-Level Config --------
+
+
+def is_nodefault(v: object) -> bool:
+    return v is NODEFAULT
 
 
 def warn_if_mutable_rev(rev: str) -> str:
@@ -255,28 +256,35 @@ def warn_if_mutable_rev(rev: str) -> str:
     return rev
 
 
+def warn_extras_in_repo_config(ek: set[str], ak: set[str], dct: dict[str, Any]) -> None:
+    print(f"Unexpected key(s) present on {dct['repo']}: {', '.join(ek)}")
+
+
+def warn_extras_in_config_root(ek: set[str], ak: set[str], dct: dict[str, Any]) -> None:
+    print(f"Unexpected key(s) present at root: {', '.join(ek)}")
+
+
 class MetaHookRepositoryConfig(spec.Model):
     repo: Literal["meta"]
     hooks: list[MetaHook]
+    rev: NoDefault = NODEFAULT
 
 
 class LocalHookRepositoryConfig(spec.Model):
     repo: Literal["local"]
     hooks: list[LocalHook]
+    rev: Annotated[NoDefault, spec.validate(is_nodefault)] = NODEFAULT
 
 
 class ConfigHookRepositoryConfig(spec.Model):
-    repo: str
+    repo: Annotated[str, spec.validate(lambda v: v not in {"meta", "local"})]
     hooks: list[ConfigHook]
-    rev: Annotated[str | None, spec.hook(warn_if_mutable_rev)] = None
+    rev: Annotated[str, spec.hook(warn_if_mutable_rev)]
 
 
 class RepositoryConfig(
     spec.TransparentModel[MetaHookRepositoryConfig | LocalHookRepositoryConfig | ConfigHookRepositoryConfig]
 ):
-    # TODO: Find a way to restrict the specific type of AnyHook based on the value of repo. Maybe __post_init__ would
-    # work, even if that can't stop the validation early?
-    # TODO: Restrict rev as well to only be present if not a local or meta hook, and otherwise be absent.
     pass
 
 
@@ -294,10 +302,6 @@ class DefaultLanguageVersion(spec.Model, allow_extras=False):
     system: str = PRE_COMMIT_VERSION
 
 
-def warn_extras_in_config_root(ek: set[str], ak: set[str], dct: dict[str, Any]) -> None:
-    print(f"Unexpected key(s) present at root: {', '.join(ek)}")
-
-
 class ConfigSchema(spec.Model, allow_extras=warn_extras_in_config_root):
     minimum_pre_commit_version: Annotated[str, spec.validate(is_le_max_version)] = "0"
     repos: list[RepositoryConfig]
@@ -307,7 +311,10 @@ class ConfigSchema(spec.Model, allow_extras=warn_extras_in_config_root):
     files: Annotated[str, spec.validate(is_valid_regex)] = ""
     exclude: Annotated[str, spec.validate(is_valid_regex)] = "^$"
     fail_fast: bool = False
-    ci: dict[str, Any] | None = None
+    ci: dict[str, Any] | NoDefault = NODEFAULT
+
+
+# endregion
 
 
 # region -------- Tests --------

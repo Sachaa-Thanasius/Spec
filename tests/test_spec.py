@@ -426,7 +426,7 @@ def test_passing_validator() -> None:
 
 
 def test_failing_validator() -> None:
-    with pytest.raises(spec.FailedValidation) as exc_info:
+    with pytest.raises(spec.FailedValidationHook) as exc_info:
         ValueValidator(x=100)
 
     assert exc_info.value.args[0] == "'ValueValidator.x' failed validation."

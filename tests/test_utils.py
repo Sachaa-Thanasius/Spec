@@ -1,6 +1,6 @@
 import pytest
 
-from spec import Item, _generate_type_repr_from_data, _prettify_type
+from spec import Item, _generate_type_repr_from_data, _prettify_item_type
 
 
 @pytest.mark.parametrize(
@@ -14,7 +14,7 @@ from spec import Item, _generate_type_repr_from_data, _prettify_type
     ],
 )
 def test_prettify_type(input_value: Item, expected_result: str) -> None:
-    assert _prettify_type(input_value._to_internal()) == expected_result
+    assert _prettify_item_type(input_value._to_internal()) == expected_result
 
 
 @pytest.mark.parametrize(

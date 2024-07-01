@@ -5,6 +5,24 @@ import pytest
 import spec
 
 
+def test_exception_notes() -> None:
+    class Inner(spec.Model):
+        c: int
+
+    class Middle(spec.Model):
+        b: Inner
+
+    class Outer(spec.Model):
+        a: Middle
+
+    invalid_sample = {"a": {"b": {"c": "1"}}}
+
+    with pytest.raises(spec.InvalidType) as exc_info:
+        Outer(invalid_sample)
+
+    assert exc_info.value.__notes__ == ["--------At Inner.c", "----At Middle.b", "At Outer.a"]
+
+
 class Simple(spec.Model):
     a: str
     b: float
@@ -144,7 +162,7 @@ def test_default_data_value() -> None:
 
 # ================================
 class OptionalModel(spec.Model):
-    value: int | None
+    value: int | None = None
 
 
 optional_not_passed_model_inst = OptionalModel({})
@@ -166,6 +184,20 @@ class AnnotatedOptionalWithDefault(spec.Model):
 
 
 annotated_optional_with_default_model_inst = AnnotatedOptionalWithDefault({})
+
+
+# ================================
+class NoDefaultModel(spec.Model):
+    val: int | spec.NoDefault
+
+
+def test_no_default_properties() -> None:
+    NoDefaultModel({})
+    NoDefaultModel({"val": 1})
+    NoDefaultModel({"val": spec.NODEFAULT})
+
+    with pytest.raises(spec.InvalidType):
+        NoDefaultModel({"val": None})
 
 
 # ================================
@@ -399,8 +431,8 @@ def test_model_repr(model_instance: spec.Model, expected_value: str) -> None:
 @pytest.mark.parametrize(
     ("model_class", "payload", "expected_error_msg"),
     [
-        (Simple2, {"c": "a string"}, "'Simple2.c' expected type 'int' but found 'str'"),
-        (List, {"data": [1, 2, "3"]}, "'List.data' expected type 'list[int]' but found 'list[int | str]'"),
+        (Simple2, {"c": "a string"}, "'Simple2.c' expected type 'int' but found 'str'."),
+        (List, {"data": [1, 2, "3"]}, "'List.data' expected type 'list[int]' but found 'list[int | str]'."),
     ],
 )
 def test_invalid_type(model_class: type[spec.Model], payload: dict[str, object], expected_error_msg: str) -> None:

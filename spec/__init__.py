@@ -1,13 +1,11 @@
-# SPDX-FileCopyrightText: 2023-present Zomatree <me@zomatree.live>
+# SPDX-FileCopyrightText: 2024-present Sachaa-Thanasius <i.like.ike101@gmail.com>
 #
 # SPDX-License-Identifier: MIT
 
-# TODO: Check if type_name, tag_info. and rename already cover parts of tagging I thought were missing. Also add tests.
-# TODO: Add handling for NODEFAULT, NoDefault, Literal.
-# TODO: Add an "omit_defaults" variable to "Model.to_dict()".
-# TODO: Add a call to __post_init__ to allow more complex validation?
-# TODO: Consider imitating some of msgspec's and TypedDict's APIs.
-# TODO: Create good error messages that track through the validation stack. See cfgv for inspiration.
+# TODO: Check if type_name, tag_info, and rename already cover parts of tagging I thought were missing. Also add tests.
+# TODO: Add handling for NODEFAULT, NoDefault (maybe Literal).
+# TODO: Add an "omit_defaults" parameter to "Model.to_dict()".
+# TODO: Consider imitating some of msgspec's, TypedDict's, and cfgv's APIs and error messages.
 
 import enum
 import sys
@@ -21,13 +19,17 @@ from typing import (
     Generic,
     Literal,
     Protocol,
+    Self,
     TypeAlias,
     TypeGuard,
     Union,
+    cast,
     get_args,
     get_origin as tp_get_origin,
     overload,
 )
+
+from ._typing_helpers import resolve_annotation
 
 if sys.version_info >= (3, 13):  # pragma: >=3.13 cover
     from typing import TypeVar
@@ -38,13 +40,6 @@ if sys.version_info >= (3, 12):  # pragma: >=3.12 cover
     from types import get_original_bases
 else:  # pragma: <3.12 cover
     from typing_extensions import get_original_bases
-
-if sys.version_info >= (3, 11):  # pragma: >=3.11 cover
-    from typing import Self
-
-    SubclassableAny = Any
-else:  # pragma: <3.11 cover
-    from typing_extensions import Any as SubclassableAny, Self
 
 
 __all__ = (
@@ -58,8 +53,8 @@ __all__ = (
     "MissingTypeName",
     "NoExtraKeysAllowed",
     # Utilities
-    "NODEFAULT",
     "NoDefault",
+    "NODEFAULT",
     # Item
     "Item",
     "rename",
@@ -88,115 +83,144 @@ _T = TypeVar("_T")
 _T_def = TypeVar("_T_def", default=Any)
 
 
-# region -------- Exceptions --------
+# region Exceptions
+# ----------------------------------------------------------------------------------------------------------------------
 
 
 class SpecError(Exception):
     """Base exception class for spec."""
 
+    def __init__(self, model_name: str, message: str):
+        super().__init__(message)
+        self.model_name = model_name
+        self.message = message
+
 
 class MissingArgument(SpecError):
     """Exception that's raised when a Model is instantiated with no arguments."""
+
+    def __init__(self, model_name: str):
+        super().__init__(model_name, "No data or kwargs passed to Model.")
 
 
 class MissingRequiredKey(SpecError):
     """Exception that's raised when a Model is instantiated without a required key."""
 
+    def __init__(self, model_name: str, key: str):
+        super().__init__(model_name, f"Missing required key '{model_name}.{key}'.")
+
 
 class InvalidType(SpecError):
     """Exception that's raised when the type for a given value doesn't match the expected type from the Model."""
 
-    def __init__(self, model: "Model", item: "_InternalItem", root_item: "_InternalItem", root_value: object):
-        super().__init__(
-            f"'{type(model).__name__}.{item.key}' expected type '{_prettify_item_type(root_item)}'"
-            f" but found '{_generate_type_repr_from_data(root_value)}'"
-        )
+    def __init__(self, model_name: str, key: str, expected: str, typ: str):
+        super().__init__(model_name, f"'{model_name}.{key}' expected type '{expected}' but found '{typ}'.")
+        self.key = key
+        self.expected = expected
+        self.typ = typ
+
+    @classmethod
+    def from_expected(
+        cls,
+        model: "Model",
+        item: "_InternalItem",
+        root_item: "_InternalItem",
+        root_value: object,
+    ) -> Self:
+        return cls(type(model).__name__, item.key, _prettify_item_type(root_item), _generate_data_type_repr(root_value))
 
 
 class FailedValidationHook(SpecError):
     """Exception that's raised when a validation hook for an item in a model fails."""
 
+    def __init__(self, model_name: str, key: str):
+        super().__init__(model_name, f"'{model_name}.{key}' failed validation.")
+        self.key = key
+
 
 class UnknownUnionKey(SpecError):
     """Exception that's raised when the provided tag for a tagged union model doesn't work to find any sub-models."""
+
+    def __init__(self, model_name: str, key: str):
+        super().__init__(model_name, f"Unknown key found `{key}`.")
+        self.key = key
 
 
 class MissingTypeName(SpecError):
     """Exception that's raised when a tagged union model is missing a type name."""
 
+    def __init__(self, model_name: str, key: str, typ: str):
+        super().__init__(model_name, f"'{model_name}.{key}' union type is missing a type name for '{typ}'.")
+        self.key = key
+        self.typ = typ
+
 
 class NoExtraKeysAllowed(SpecError):
     """Exception that's raised when a model prohibits extra keys, but they're provided anyway."""
 
-    def __init__(self, extra_keys: Iterable[str], allowed_keys: Iterable[str]) -> None:
-        super().__init__(f"No extra keys are allowed in this model. Extra(s) found: {extra_keys}.")
+    def __init__(self, model_name: str, extra_keys: Iterable[str], allowed_keys: Iterable[str]):
+        super().__init__(model_name, f"No extra keys are allowed in this model. Extra(s) found: {extra_keys}.")
         self.extra_keys = extra_keys
         self.allowed_keys = allowed_keys
-
-
-@contextmanager
-def add_note_to_exception(note: str) -> Generator[None]:
-    try:
-        yield
-    except Exception as exc:  # TODO: Should this be restricted to catching SpecError?
-        if (notes := getattr(exc, "__notes__", None)) is not None:
-            notes.append(note)
-        else:
-            exc.__notes__ = [note]  # pyright: ignore [reportAttributeAccessIssue] # Runtime attribute creation.
-        raise
-
-
-@contextmanager
-def reorder_exception_notes() -> Generator[None]:
-    try:
-        yield
-    except Exception as exc:
-        if (notes := getattr(exc, "__notes__", None)) is not None:
-            exc.__notes__ = [  # pyright: ignore [reportAttributeAccessIssue] # Runtime attribute creation.
-                (note if (i == (len(notes) - 1)) else f"┌───{note}") for i, note in enumerate(notes)
-            ]
-        raise
 
 
 # endregion
 
 
-# region -------- Utilities --------
+# region Utilities
+# ----------------------------------------------------------------------------------------------------------------------
 
 
-class SpecSentinel(enum.Enum):
-    """Internal sentinel factory."""
+@contextmanager
+def add_note_to_exception(note: str) -> Generator[None]:
+    """Add a note to an captured exception, then let it continue propogating."""
 
-    NODEFAULT = "NODEFAULT"
-    MISSING = "MISSING"
-
-    def __bool__(self) -> Literal[False]:
-        return False
-
-
-MISSING = SpecSentinel.MISSING
-"""Internal sentinel."""
-
-NODEFAULT = SpecSentinel.NODEFAULT
-"""Sentinel that indicates no default value exists for a model member."""
-
-NoDefault: TypeAlias = Literal[NODEFAULT]
-"""Type of NODEFAULT sentinel for use in annotations."""
+    try:
+        yield
+    except Exception as exc:
+        exc.add_note(note)
+        raise
 
 
-def _is_union(typ: type) -> bool:
-    """Determine if the origin of a type is Union/UnionType."""
+@contextmanager
+def format_exception_notes() -> Generator[None]:
+    """Make the notes of a captured exception slightly more graph-like in presentation."""
 
-    origin = get_origin(typ)
+    try:
+        yield
+    except Exception as exc:
+        if hasattr(exc, "__notes__"):
+            exc.__notes__[:-1] = [f"----{note}" for note in exc.__notes__[:-1]]
+        raise
 
-    return (origin is Union) or (origin is types.UnionType)
+
+class Missing(enum.Enum):
+    MISSING = 0
+
+    __repr__ = enum.global_enum_repr  # pyright: ignore [reportAssignmentType]
+
+
+MISSING = Missing.MISSING
+"""Singleton sentinel for internal use."""
+
+
+class NoDefault(enum.Enum):
+    """Type of spec.NODEFAULT singleton. Meant to be used in annotations."""
+
+    NODEFAULT = 0
+
+    __repr__ = enum.global_enum_repr  # pyright: ignore [reportAssignmentType]
+
+
+NODEFAULT = NoDefault.NODEFAULT
+"""Singleton sentinel that indicates no default value exists for a model member."""
 
 
 def _get_type_name(typ: type) -> str:
     return getattr(typ, "_spec_model_type_name", typ.__name__)
 
 
-def get_origin(typ: type) -> Any:
+def get_origin(typ: Any) -> Any:
     """Get the unsubscripted version of a type, or just the type if it doesn't support subscripting or wasn't
     subscripted.
 
@@ -236,16 +260,16 @@ def _repr_as_union(type_reprs: Iterable[str]) -> str:
     return " | ".join(type_reprs or ["Unknown"])
 
 
-def _generate_type_repr_from_data(data: object) -> str:
+def _generate_data_type_repr(data: object) -> str:
     # Ensure uniqueness and conserve order.
     match data:
         case list() | set() | tuple():
-            unique_types = tuple(dict.fromkeys(map(_generate_type_repr_from_data, data)))  # pyright: ignore [reportUnknownArgumentType]
+            unique_types = tuple(dict.fromkeys(map(_generate_data_type_repr, data)))  # pyright: ignore [reportUnknownArgumentType]
             generics = (_repr_as_union(unique_types),)
 
         case dict():
-            key_types = tuple(dict.fromkeys(map(_generate_type_repr_from_data, data.keys())))  # pyright: ignore [reportUnknownArgumentType]
-            value_types = tuple(dict.fromkeys(map(_generate_type_repr_from_data, data.values())))  # pyright: ignore [reportUnknownArgumentType]
+            key_types = tuple(dict.fromkeys(map(_generate_data_type_repr, data.keys())))  # pyright: ignore [reportUnknownArgumentType]
+            value_types = tuple(dict.fromkeys(map(_generate_data_type_repr, data.values())))  # pyright: ignore [reportUnknownArgumentType]
 
             generics = (_repr_as_union(key_types), _repr_as_union(value_types))
         case _:
@@ -259,7 +283,8 @@ def _generate_type_repr_from_data(data: object) -> str:
 # endregion
 
 
-# region -------- Items --------
+# region Items
+# ----------------------------------------------------------------------------------------------------------------------
 
 
 class _InternalItem(Generic[_T_def]):
@@ -288,7 +313,7 @@ class _InternalItem(Generic[_T_def]):
         tag: Literal["untagged", "external", "internal", "adjacent"],
         tag_info: dict[str, Any],
         type_name: str | None,
-    ) -> None:
+    ):
         self.key: str = key
         self.rename: str | None = rename
         self.typ: type[_T_def] = typ
@@ -303,6 +328,9 @@ class _InternalItem(Generic[_T_def]):
     @property
     def actual_key(self) -> str:
         return self.rename or self.key
+
+    def __repr__(self):
+        return f"{type(self).__name__}({', '.join(f'{name}={getattr(self, name)!r}' for name in type(self).__slots__)})"
 
 
 class Item(Generic[_T_def]):
@@ -338,7 +366,7 @@ class Item(Generic[_T_def]):
         tag: Literal["untagged", "external", "internal", "adjacent"] = "untagged",
         tag_info: dict[str, Any] | Literal[MISSING] = MISSING,
         type_name: str | None = None,
-    ) -> None:
+    ):
         self._key: str | None = key
         self._rename: str | None = rename
         self._typ: type[_T_def] | None = typ
@@ -350,6 +378,9 @@ class Item(Generic[_T_def]):
         self._tag: Literal["untagged", "external", "internal", "adjacent"] = tag
         self._tag_info: dict[str, Any] = tag_info if tag_info is not MISSING else {}
         self._type_name: str | None = type_name
+
+    def __repr__(self):
+        return f"{type(self).__name__}({', '.join(f'{name}={getattr(self, name)!r}' for name in type(self).__slots__)})"
 
     def _to_internal(self) -> _InternalItem[_T_def]:
         assert self._key is not None
@@ -393,10 +424,7 @@ class Item(Generic[_T_def]):
         return self
 
     @overload
-    def tag(self, tag_type: Literal["untagged"]) -> Self: ...
-
-    @overload
-    def tag(self, tag_type: Literal["external"]) -> Self: ...
+    def tag(self, tag_type: Literal["untagged", "external"]) -> Self: ...
 
     @overload
     def tag(self, tag_type: Literal["internal"], *, tag: object) -> Self: ...
@@ -436,11 +464,7 @@ def hook(f: Callable[[_T_def], _T_def]) -> Item[_T_def]:
 
 
 @overload
-def tag(tag_type: Literal["untagged"]) -> Item: ...
-
-
-@overload
-def tag(tag_type: Literal["external"]) -> Item: ...
+def tag(tag_type: Literal["untagged", "external"]) -> Item: ...
 
 
 @overload
@@ -462,7 +486,8 @@ def type_name(name: str) -> Item:
 # endregion
 
 
-# region -------- Main logic --------
+# region Main logic
+# ----------------------------------------------------------------------------------------------------------------------
 
 
 def is_model(obj: object) -> TypeGuard[type["Model"]]:
@@ -483,7 +508,7 @@ def validate_value(
     root_value: Any = MISSING,
 ) -> Any:
     root_item = root_item or item
-    root_value = root_value or value
+    root_value = root_value if (root_value is not MISSING) else value
 
     with add_note_to_exception(f"At {type(model).__name__}.{item.key}"):
         if is_model(item.typ):
@@ -495,6 +520,7 @@ def validate_value(
             # Tagged case: item.typ is only a list when the model is tagged (implicitly as a union or explicitly).
             # See convert_to_item for that assignment.
             match (item.tag, value):
+                # Union case.
                 case ("untagged", _):
                     for arg in item.typ:
                         try:
@@ -504,76 +530,76 @@ def validate_value(
                         else:
                             break
                     else:
-                        raise InvalidType(model, item, root_item, root_value)
+                        raise InvalidType.from_expected(model, item, root_item, root_value)
 
                 case ("external", dict()):
+                    value = cast(dict[str, Any], value)
                     try:
-                        key, value = next(iter(value.items()))  # pyright: ignore [reportUnknownArgumentType, reportUnknownVariableType]
+                        key, value = next(iter(value.items()))
                     except StopIteration:
-                        msg = "Unknown key found ``"
-                        raise UnknownUnionKey(msg) from None
+                        raise UnknownUnionKey(type(model).__name__, "") from None
 
                     for internal_item in item.typ:
                         assert internal_item.type_name
 
                         if internal_item.type_name == key:
                             value = validate_value(internal_item, model, value, root_item, root_value)
-                            model._tag_map[internal_item.key] = key
+                            model._spec_tag_map[internal_item.key] = key
                             break
                     else:
-                        msg = f"Unknown key found `{key}`"
-                        raise UnknownUnionKey(msg)
+                        raise UnknownUnionKey(type(model).__name__, key)
 
                 case ("adjacent", dict()):
+                    value = cast(dict[str, Any], value)
+
                     tag_key = item.tag_info["tag"]
                     content_key = item.tag_info["content"]
 
                     try:
-                        key, content = value[tag_key], value[content_key]  # pyright: ignore [reportUnknownVariableType]
+                        key, content = value[tag_key], value[content_key]
                     except KeyError:
-                        raise InvalidType(model, item, root_item, root_value) from None
+                        raise InvalidType.from_expected(model, item, root_item, root_value) from None
 
                     for internal_item in item.typ:
                         assert internal_item.type_name
 
                         if internal_item.type_name == key:
                             value = validate_value(internal_item, model, content, root_item, root_value)
-                            model._tag_map[internal_item.key] = key
+                            model._spec_tag_map[internal_item.key] = key
                             break
                     else:
-                        msg = f"Unknown key found `{key}`"
-                        raise UnknownUnionKey(msg)
+                        raise UnknownUnionKey(type(model).__name__, key)
 
                 case ("internal", dict()):
+                    value = cast(dict[str, Any], value)
+
                     tag_key = item.tag_info["tag"]
 
                     try:
-                        key = value[tag_key]  # pyright: ignore [reportUnknownVariableType]
+                        key = value[tag_key]
                     except KeyError:
-                        msg = f"Missing required key '{type(model).__name__}.{tag_key}'."
-                        raise MissingRequiredKey(msg) from None
+                        raise MissingRequiredKey(type(model).__name__, tag_key) from None
 
                     for internal_item in item.typ:
                         assert internal_item.type_name
 
                         if internal_item.type_name == key:
                             value = validate_value(internal_item, model, value, root_item, root_value)
-                            model._tag_map[internal_item.key] = key
+                            model._spec_tag_map[internal_item.key] = key
                             break
                     else:
-                        msg = f"Unknown key found `{key}`"
-                        raise UnknownUnionKey(msg)
+                        raise UnknownUnionKey(type(model).__name__, key)
 
                 case ("external" | "adjacent" | "internal", _):
-                    raise InvalidType(model, item, root_item, root_value)
+                    raise InvalidType.from_expected(model, item, root_item, root_value)
 
-        elif origin is Any or issubclass(origin, SubclassableAny):
-            # Any case.
+        # Any case: Checking Any with isinstance won't work.
+        elif isinstance(origin, type) and issubclass(origin, Any):
             pass
 
+        # Base case.
         elif not isinstance(value, origin):
-            # Base case: This is where we go if the type of the value doesn't match its annotation.
-            raise InvalidType(model, item, root_item, root_value)
+            raise InvalidType.from_expected(model, item, root_item, root_value)
 
         if origin in (list, set, tuple):
             internal_item = item.internal_items[0]
@@ -598,8 +624,7 @@ def validate_value(
             value = dict_output
 
         if not item.validate(value):
-            msg = f"'{type(model).__name__}.{item.key}' failed validation."
-            raise FailedValidationHook(msg)
+            raise FailedValidationHook(type(model).__name__, item.key)
 
         return item.hook(value)
 
@@ -639,10 +664,10 @@ def convert_to_item(klass: type, key: str, annotation: Any, existing: Item | Non
         # Base case.
         item = Item(key=key, typ=annotation)
 
-    if _is_union(origin):
-        # Provide None as a default if Optional is in the annotation and no default value was set.
-        if any(x is types.NoneType for x in args) and "_default" not in item._modified:
-            item._default = lambda: None
+    if origin in {Union, types.UnionType}:
+        # Provide NODEFAULT as a default if NoDefault is in the annotation and no default value was set.
+        if any(x is NoDefault for x in args) and "_default" not in item._modified:
+            item._default = lambda: NODEFAULT
 
         internal_types: list[_InternalItem] = []
 
@@ -654,8 +679,7 @@ def convert_to_item(klass: type, key: str, annotation: Any, existing: Item | Non
                     inner_item._type_name = typ._spec_model_type_name
 
                 if not inner_item._type_name:
-                    msg = f"'{klass.__name__}.{key}' union type is missing a type name for '{typ}'."
-                    raise MissingTypeName(msg)
+                    raise MissingTypeName(klass.__name__, key, typ)
 
             internal_types.append(inner_item._to_internal())
 
@@ -670,7 +694,7 @@ def convert_to_item(klass: type, key: str, annotation: Any, existing: Item | Non
     return item
 
 
-def value_to_dict(value: Any, tag_map: dict[str, Any], item: _InternalItem) -> Any:
+def value_to_dict(value: object, tag_map: dict[str, Any], item: _InternalItem) -> Any:
     """Normalize a value within a model for the dict version of the model.
 
     If the model is tagged, the value may be wrapped in a dict preemptively.
@@ -686,12 +710,14 @@ def value_to_dict(value: Any, tag_map: dict[str, Any], item: _InternalItem) -> A
             output = type(value)(  # pyright: ignore [reportUnknownArgumentType]
                 (inner_value.to_dict() if isinstance(inner_value, Model) else inner_value)
                 for inner_value in value  # pyright: ignore [reportUnknownVariableType]
+                if inner_value is not NODEFAULT
             )
 
         case dict():
             output = {
                 inner_key: (inner_value.to_dict() if isinstance(inner_value, Model) else inner_value)
                 for inner_key, inner_value in value.items()  # pyright: ignore [reportUnknownVariableType]
+                if inner_value is not NODEFAULT
             }
 
         case _:
@@ -713,7 +739,8 @@ def value_to_dict(value: Any, tag_map: dict[str, Any], item: _InternalItem) -> A
 # endregion
 
 
-# region ---- Renaming schemes ----
+# region Renaming schemes
+# ----------------------------------------------------------------------------------------------------------------------
 
 
 class RenameBase:
@@ -775,7 +802,8 @@ class HasRename(Protocol):
 # endregion
 
 
-# region -------- Model --------
+# region Model
+# ----------------------------------------------------------------------------------------------------------------------
 
 
 OnExtrasCallback: TypeAlias = Callable[[set[str], set[str], dict[str, Any]], Any]
@@ -792,7 +820,7 @@ class Model:
         type_name: str | None = None,
         rename: HasRename = Default,
         allow_extras: bool | OnExtrasCallback = True,
-    ) -> None:
+    ):
         if not (isinstance(allow_extras, bool) or callable(allow_extras)):
             msg = "'allow_extras' must either be True, False, or a custom callback function."
             raise TypeError(msg)
@@ -808,7 +836,8 @@ class Model:
                 items.update(base_items)
 
         for key, annotation in cls.__annotations__.items():
-            item = convert_to_item(cls, key, annotation)
+            ann = resolve_annotation(annotation, sys.modules[cls.__module__].__dict__, None, None)
+            item = convert_to_item(cls, key, ann)
 
             if "rename" not in item._modified and item._rename is None:
                 item._rename = rename.rename(key)
@@ -829,12 +858,11 @@ class Model:
     def __init__(self, data: dict[str, Any] | None = None, /) -> None: ...
 
     def __init__(self, data: dict[str, Any] | None = None, /, **kwargs: Any) -> None:
-        with reorder_exception_notes():
-            self._tag_map: dict[str, str] = {}
+        with format_exception_notes():
+            self._spec_tag_map: dict[str, str] = {}
 
             if data is None and not kwargs:
-                msg = "No data or kwargs passed to Model."
-                raise MissingArgument(msg)
+                raise MissingArgument(type(self).__name__)
 
             if data and kwargs:
                 msg = "Only data or kwargs is accepted, not both."
@@ -849,15 +877,14 @@ class Model:
                     if self._spec_model_extras_policy is not False:
                         self._spec_model_extras_policy(extra_keys, allowed_keys, data)
                     else:
-                        raise NoExtraKeysAllowed(extra_keys, allowed_keys)
+                        raise NoExtraKeysAllowed(type(self).__name__, extra_keys, allowed_keys)
 
             for key, item in self._spec_model_items.items():
                 if key not in data:
                     if item.default:
                         setattr(self, item.key, item.default())
                     else:
-                        msg = f"Missing required key '{type(self).__name__}.{key}'."
-                        raise MissingRequiredKey(msg)
+                        raise MissingRequiredKey(type(self).__name__, key)
 
             for key, value in data.items():
                 if not (item := self._spec_model_items.get(key)):
@@ -867,16 +894,13 @@ class Model:
 
                 setattr(self, item.key, new_value)
 
-            if post_init := getattr(self, "__post_init__", None):
-                post_init()
-
-    def __eq__(self, other: object) -> bool:
+    def __eq__(self, other: object):
         if not isinstance(other, type(self)):
             return NotImplemented
 
         return self.to_dict() == other.to_dict()
 
-    def __repr__(self) -> str:
+    def __repr__(self):
         items = [f"{item.key}={getattr(self, item.key)!r}" for item in self._spec_model_items.values()]
         return f"<{type(self).__name__} {' '.join(items)}>"
 
@@ -884,30 +908,31 @@ class Model:
         """Return the validated model as a dict, respecting the tag scheme."""
 
         return {
-            item.actual_key: value_to_dict(getattr(self, item.key), self._tag_map, item)
+            item.actual_key: value_to_dict(getattr(self, item.key), self._spec_tag_map, item)
             for item in self._spec_model_items.values()
+            if getattr(self, item.key) is not NODEFAULT
         }
 
 
 class TransparentModel(Generic[_T], Model):
     value: _T
 
-    def __init_subclass__(cls, *, item: Item | None = None) -> None:
+    def __init_subclass__(cls, *, item: Item | None = None):
         typ = get_args(get_original_bases(cls)[0])[0]
         cls._spec_model_items = {"value": convert_to_item(cls, "value", typ, item)._to_internal()}
 
-    def __init__(self, data: object) -> None:
+    def __init__(self, data: object):
         super().__init__({"value": data})
 
-    def __repr__(self) -> str:
+    def __repr__(self):
         return f"<{type(self).__name__} {self.value!r}>"
 
     def to_dict(self) -> dict[str, Any]:
-        return value_to_dict(self.value, self._tag_map, self._spec_model_items["value"])
+        return value_to_dict(self.value, self._spec_tag_map, self._spec_model_items["value"])
 
 
 def transparent(typ: type[_T] | Any, item: Item | None = None) -> type[TransparentModel[_T]]:
-    if _is_union(typ):  # noqa: SIM108 # Readability.
+    if get_origin(typ) in {Union, types.UnionType}:
         name = "Or".join([_get_type_name(t) for t in get_args(typ)])
     else:
         name = _get_type_name(typ)

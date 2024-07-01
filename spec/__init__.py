@@ -18,7 +18,6 @@ from typing import (
     ClassVar,
     Generic,
     Literal,
-    Protocol,
     Self,
     TypeAlias,
     TypeGuard,
@@ -64,14 +63,12 @@ __all__ = (
     "tag",
     "type_name",
     # Renaming schemes
-    "RenameBase",
-    "Default",
-    "Upper",
-    "CamelCase",
-    "PascalCase",
-    "KebabCase",
-    "ScreamingKebabCase",
-    "RenameScheme",
+    "to_default",
+    "to_upper",
+    "to_camel_case",
+    "to_pascal_case",
+    "to_kebab_case",
+    "to_screaming_kebab_case",
     # Model
     "is_model",
     "Model",
@@ -486,7 +483,7 @@ def type_name(name: str) -> Item:
 # endregion
 
 
-# region Main logic
+# region Main validation logic
 # ----------------------------------------------------------------------------------------------------------------------
 
 
@@ -666,7 +663,7 @@ def convert_to_item(klass: type, key: str, annotation: Any, existing: Item | Non
 
     if origin in {Union, types.UnionType}:
         # Provide NODEFAULT as a default if NoDefault is in the annotation and no default value was set.
-        if any(x is NoDefault for x in args) and "_default" not in item._modified:
+        if any(x == NoDefault for x in args) and "_default" not in item._modified:
             item._default = lambda: NODEFAULT
 
         internal_types: list[_InternalItem] = []
@@ -679,7 +676,7 @@ def convert_to_item(klass: type, key: str, annotation: Any, existing: Item | Non
                     inner_item._type_name = typ._spec_model_type_name
 
                 if not inner_item._type_name:
-                    raise MissingTypeName(klass.__name__, key, typ)
+                    raise MissingTypeName(klass.__name__, key, repr(typ))
 
             internal_types.append(inner_item._to_internal())
 
@@ -743,60 +740,45 @@ def value_to_dict(value: object, tag_map: dict[str, Any], item: _InternalItem) -
 # ----------------------------------------------------------------------------------------------------------------------
 
 
-class RenameBase:
-    @staticmethod
-    def rename(key: str) -> str:
-        raise NotImplementedError
+def to_default(key: str) -> str:
+    return key
 
 
-class Default(RenameBase):
-    @staticmethod
-    def rename(key: str) -> str:
-        return key
+def to_upper(key: str) -> str:
+    return key.upper()
 
 
-class Upper(RenameBase):
-    @staticmethod
-    def rename(key: str) -> str:
-        return key.upper()
+def to_camel_case(key: str) -> str:
+    match key.split("_"):
+        case [first]:
+            return first[0].lower() + first[1:]
+        case [first, *rest]:
+            return "".join([(first[0].lower() + first[1:]), *(word[0].upper() + word[1:] for word in rest)])
+        case _:  # pragma: no cover
+            return ""
 
 
-class CamelCase(RenameBase):
-    @staticmethod
-    def rename(key: str) -> str:
-        match key.split("_"):
-            case [first]:
-                return first
-            case [first, *rest]:
-                return "".join([first, *(word[0].upper() + word[1:] for word in rest)])
-            case _:  # pragma: no cover
-                return ""
+def to_pascal_case(key: str) -> str:
+    parts = [(word[0].upper() + word[1:]) for word in key.split("_") if word]
+    return "".join(parts)
 
 
-class PascalCase(RenameBase):
-    @staticmethod
-    def rename(key: str) -> str:
-        parts = [(word[0].upper() + word[1:]) for word in key.split("_") if word]
-        return "".join(parts)
+def to_kebab_case(key: str) -> str:
+    return key.replace("_", "-")
 
 
-class KebabCase(RenameBase):
-    @staticmethod
-    def rename(key: str) -> str:
-        return key.replace("_", "-")
+def to_screaming_kebab_case(key: str) -> str:
+    return to_upper(to_kebab_case(key))
 
 
-class ScreamingKebabCase(RenameBase):
-    @staticmethod
-    def rename(key: str) -> str:
-        return Upper.rename(KebabCase.rename(key))
-
-
-RenameScheme: TypeAlias = Default | Upper | CamelCase | PascalCase | KebabCase | ScreamingKebabCase
-
-
-class HasRename(Protocol):
-    def rename(self, key: str) -> str: ...
+_BUILTIN_RENAME_SCHEMES = {
+    "default": to_default,
+    "upper": to_upper,
+    "camel": to_camel_case,
+    "pascal": to_pascal_case,
+    "kebab": to_kebab_case,
+    "screaming_kebab": to_screaming_kebab_case,
+}
 
 
 # endregion
@@ -806,6 +788,7 @@ class HasRename(Protocol):
 # ----------------------------------------------------------------------------------------------------------------------
 
 
+RenameScheme = Literal["default", "upper", "camel", "pascal", "kebab", "screaming_kebab"] | Callable[[str], str]
 OnExtrasCallback: TypeAlias = Callable[[set[str], set[str], dict[str, Any]], Any]
 
 
@@ -818,15 +801,29 @@ class Model:
         cls,
         *,
         type_name: str | None = None,
-        rename: HasRename = Default,
+        rename: RenameScheme = to_default,
         allow_extras: bool | OnExtrasCallback = True,
     ):
+        try:
+            rename_scheme = _BUILTIN_RENAME_SCHEMES[rename]  # pyright: ignore [reportArgumentType]
+        except KeyError:
+            if not callable(rename):
+                msg = (
+                    "'rename' must be one of 'default', 'upper', 'camel', 'pascal', 'kebab', 'screaming_kebnab', or "
+                    "a custom callable that takes a key and returns the renamed key."
+                )
+                raise TypeError(msg) from None
+            rename_scheme = rename
+
         if not (isinstance(allow_extras, bool) or callable(allow_extras)):
             msg = "'allow_extras' must either be True, False, or a custom callback function."
             raise TypeError(msg)
 
         cls._spec_model_type_name = type_name or cls.__name__
-        cls._spec_model_extras_policy = allow_extras
+        if isinstance(allow_extras, bool):
+            cls._spec_model_extras_policy = allow_extras
+        else:
+            cls._spec_model_extras_policy = staticmethod(allow_extras)
 
         items: dict[str, _InternalItem] = {}
 
@@ -840,7 +837,7 @@ class Model:
             item = convert_to_item(cls, key, ann)
 
             if "rename" not in item._modified and item._rename is None:
-                item._rename = rename.rename(key)
+                item._rename = rename_scheme(key)
 
             internal_item = item._to_internal()
 
@@ -901,7 +898,7 @@ class Model:
         return self.to_dict() == other.to_dict()
 
     def __repr__(self):
-        items = [f"{item.key}={getattr(self, item.key)!r}" for item in self._spec_model_items.values()]
+        items = [f"{item.key}={getattr(self, item.key, MISSING)!r}" for item in self._spec_model_items.values()]
         return f"<{type(self).__name__} {' '.join(items)}>"
 
     def to_dict(self) -> dict[str, Any]:

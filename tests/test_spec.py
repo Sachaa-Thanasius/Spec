@@ -1,4 +1,5 @@
-from typing import Annotated
+from collections.abc import Callable
+from typing import Annotated, Any
 
 import pytest
 
@@ -300,23 +301,33 @@ def test_tagged_part_value_attr(
 
 # ================================
 
+
+def to_spongebob_case(key: str) -> str:
+    return "".join((char.lower() if i % 2 == 0 else char.upper()) for i, char in enumerate(key))
+
+
 renaming_cases = pytest.mark.parametrize(
     ("renaming_scheme", "attr_name", "internal_attr_name"),
     [
-        (spec.Upper, "MY", "my"),
-        (spec.PascalCase, "My", "my"),
-        (spec.ScreamingKebabCase, "MY", "my"),
-        (spec.Upper, "MY_FOO_VAR", "my_foo_var"),
-        (spec.CamelCase, "myFooVar", "my_foo_var"),
-        (spec.PascalCase, "MyFooVar", "my_foo_var"),
-        (spec.KebabCase, "my-foo-var", "my_foo_var"),
-        (spec.ScreamingKebabCase, "MY-FOO-VAR", "my_foo_var"),
+        ("upper", "MY", "my"),
+        ("pascal", "My", "my"),
+        ("screaming_kebab", "MY", "my"),
+        ("upper", "MY_FOO_VAR", "my_foo_var"),
+        ("camel", "myFooVar", "my_foo_var"),
+        ("pascal", "MyFooVar", "my_foo_var"),
+        ("kebab", "my-foo-var", "my_foo_var"),
+        ("screaming_kebab", "MY-FOO-VAR", "my_foo_var"),
+        (to_spongebob_case, "mY_FoO_VaR", "my_foo_var"),
     ],
 )
 
 
 @renaming_cases
-def test_renaming_schemes(renaming_scheme: type[spec.RenameScheme], attr_name: str, internal_attr_name: str) -> None:
+def test_valid_renaming_schemes(
+    renaming_scheme: str | Callable[[str], str],
+    attr_name: str,
+    internal_attr_name: str,
+) -> None:
     GlobalRename = type(
         "GlobalRename",
         (spec.Model,),
@@ -329,9 +340,31 @@ def test_renaming_schemes(renaming_scheme: type[spec.RenameScheme], attr_name: s
     assert getattr(instance, internal_attr_name) == 1
 
 
+@pytest.mark.parametrize(
+    "renaming_scheme",
+    [
+        "not_spongebob",
+        "hello",
+        object(),
+    ],
+)
+def test_invalid_renaming_schemes(renaming_scheme: str) -> None:
+    with pytest.raises(TypeError) as exc_info:
+
+        class _InvalidRename(spec.Model, rename=renaming_scheme):  # pyright: ignore
+            thing: str
+
+    expected_error_msg = (
+        "'rename' must be one of 'default', 'upper', 'camel', 'pascal', 'kebab', 'screaming_kebnab', or "
+        "a custom callable that takes a key and returns the renamed key."
+    )
+
+    assert exc_info.value.args[0] == expected_error_msg
+
+
 @renaming_cases
 def test_invalid_input_when_rename_active(
-    renaming_scheme: type[spec.RenameScheme],
+    renaming_scheme: Callable[[str], str],
     attr_name: str,
     internal_attr_name: str,
 ) -> None:
@@ -464,11 +497,38 @@ def test_failing_validator() -> None:
     assert exc_info.value.args[0] == "'ValueValidator.x' failed validation."
 
 
+@pytest.mark.parametrize(
+    "allow_extras_arg",
+    [object(), "hello", "no", "false"],
+)
+def test_invalid_allow_extras_arg(allow_extras_arg: Any) -> None:
+    with pytest.raises(TypeError) as exc_info:
+
+        class InvalidExtraParam(spec.Model, allow_extras=allow_extras_arg):  # pyright: ignore
+            thing: str
+
+    assert exc_info.value.args[0] == "'allow_extras' must either be True, False, or a custom callback function."
+
+
 def test_denied_extra_keys() -> None:
     class NoExtra(spec.Model, allow_extras=False):
         thing: str
+
+    NoExtra(thing="hello")
 
     with pytest.raises(spec.NoExtraKeysAllowed) as exc_info:
         NoExtra({"thing": "hello", "thing2": "world"})
 
     assert exc_info.value.args[0] == "No extra keys are allowed in this model. Extra(s) found: {'thing2'}."
+
+
+def test_custom_callback_for_allow_extras() -> None:
+    def on_extras_callback(extra_keys: set[str], allowed_keys: set[str], data: dict[str, Any]) -> None:
+        assert extra_keys == {"thing2"}
+        assert allowed_keys == {"thing"}
+        assert data == {"thing": "hello", "thing2": "goodbye"}
+
+    class PrintOnExtra(spec.Model, allow_extras=on_extras_callback):
+        thing: str
+
+    PrintOnExtra(thing="hello", thing2="goodbye")

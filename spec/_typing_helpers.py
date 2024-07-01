@@ -75,7 +75,7 @@ def evaluate_annotation(  # noqa: PLR0911
                 converted = Union[args]  # type: ignore  # noqa: UP007
                 return evaluate_annotation(converted, globalns, localns, cache, with_extras=with_extras)
 
-            return tp
+            return tp  # pragma: no cover # Nothing in the standard library meets this case yet.
         if tp.__origin__ is Union:
             try:
                 none_index = args.index(types.NoneType)

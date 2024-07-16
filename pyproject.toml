@@ -28,7 +28,7 @@ Issues = "https://github.com/Sachaa-Thanasius/Spec/issues"
 Source = "https://github.com/Sachaa-Thanasius/Spec"
 
 
-# ==== Testing configuration.
+# ---- Testing config
 
 [tool.hatch.envs.hatch-test]
 dependencies = ["coverage[toml]>=7.4", "covdefaults", "pytest"]
@@ -48,7 +48,7 @@ plugins = ["covdefaults"]
 omit = ["tests/test_integration.py"]
 
 
-# ==== Linting configuration.
+# ---- Linting config
 
 [tool.ruff]
 include = ["spec/*", "tests/*"]
@@ -89,27 +89,27 @@ select = [
     "RUF",
 ]
 ignore = [
-    "S101",    # Allow use of assert for typing reasons.
-    "PLR2004", # Magic value comparison.
-    "SIM105",  # Suppressable exception. contextlib.suppress is a stylistic choice with overhead.
-    "ANN101",  # Type of Self for self is usually implicit.
-    "ANN102",  # Type of type[Self] for cls is usually implicit.
-    "ANN204",  # Special method return types are usually implicit or known by type checkers.
-    "ANN401",  # Any is necessary sometimes.
-    "UP038",   # isinstance performs better with tuples than unions.
-    "PT001",   # pytest recommends against empty parentheses on pytest.fixture.
+    "S101",   # Use of assert here is a known quantity for typing cases. All uses should be safe to optimize out.
+    "SIM105", # Suppressable exception. contextlib.suppress is a stylistic choice with overhead.
+    "C90",    # McCabe complexity.
+    "ANN101", # Type of Self for self is usually implicit and/or known by the type-checker.
+    "ANN102", # Type of type[Self] for cls is usually implicit and/or known by the type-checker.
+    "ANN204", # Special method return types are usually implicit and/or known by type checker.
+    "ANN401", # Any is needed for some parameters.
+    "UP038",  # isinstance performs better with tuples than unions.
+    "PT001",  # pytest recommends against empty parentheses on pytest.fixture.
+    "PYI036", # Bug with annotations for __exit__.
+    "PD011",  # Erroneous issue that triggers for any .values attribute access at all.
     # == Recommended ignores from ruff when using ruff format.
     "E111",
     "E114",
     "E117",
-    "D206",
-    "D300",
     "COM812",
     "COM819",
     # "E501",
     "ISC001",
     "ISC002",
-    # == Project-specific rules.
+    # -- Project-specific rules.
     # Some complexity is unavoidable.
     "PLR0912",
     "PLR0913",
@@ -123,15 +123,27 @@ unfixable = [
 keep-runtime-typing = true
 
 [tool.ruff.lint.isort]
+lines-after-imports = 2
 combine-as-imports = true
 
+[tool.ruff.lint.per-file-ignores]
+"tests/test_integration.py" = ["T201", "T203"] # Allow prints.
 
-# ==== Type-checking configuration.
+
+# ---- Type-checking config
 
 [tool.pyright]
 include = ["spec", "tests"]
 pythonVersion = "3.11"
+pythonPlatform = "All"
 typeCheckingMode = "strict"
 
-reportPrivateUsage = false
+reportPrivateUsage = "none"                  # We're the package; of course we're accessing internals.
+reportUnnecessaryIsInstance = "none"         # We should account for garbage input from users.
+reportUninitializedInstanceVariable = "none" # Nice as an infrequent checkup, but usually noisy.
+reportCallInDefaultInitializer = "warning"
+# reportImplicitOverride = "warning"
+reportImportCycles = "none"                    # Nice as an infrequent checkup, but "if TYPE_CHECKING" causes false positives.
+reportPropertyTypeMismatch = "error"
+reportShadowedImports = "error"
 reportUnnecessaryTypeIgnoreComment = "warning"

@@ -1,5 +1,5 @@
 # The code below is modified from discord.py, published at https://github.com/Rapptz/discord.py/blob/v2.4.0/discord/utils.py#L1098-L1187.
-# It was made available under MIT and is copyright 2015-present Rapptz.
+# It was made available under MIT with copyright 2015-present Rapptz.
 # The license in its original form may be found at https://github.com/Rapptz/discord.py/blob/v2.4.0/LICENSE
 # and is also included in this repository's `LICENSE` file.
 
@@ -9,10 +9,8 @@ from collections.abc import Iterable
 from enum import Enum
 from typing import Annotated, Any, ForwardRef, Literal, Union
 
-if sys.version_info >= (3, 12):  # pragma: >=3.12 cover
-    from typing import TypeAliasType
-else:  # pragma: <3.12 cover
-    from typing_extensions import TypeAliasType
+from ._typing_compat import TypeAliasType
+
 
 __all__ = ("resolve_annotation", "evaluate_annotation")
 

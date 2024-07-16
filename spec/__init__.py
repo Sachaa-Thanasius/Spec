@@ -5,7 +5,7 @@
 # TODO: Check if type_name, tag_info, and rename already cover parts of tagging I thought were missing. Also add tests.
 # TODO: Add handling for NODEFAULT, NoDefault (maybe Literal).
 # TODO: Add an "omit_defaults" parameter to "Model.to_dict()".
-# TODO: Consider imitating some of msgspec's, TypedDict's, and cfgv's APIs and error messages.
+# TODO: Draw inspiration from msgspec's, TypedDict's, and cfgv's APIs, e.g. total=False, error message depth, etc.
 
 import enum
 import sys
@@ -28,17 +28,8 @@ from typing import (
     overload,
 )
 
-from ._typing_helpers import resolve_annotation
-
-if sys.version_info >= (3, 13):  # pragma: >=3.13 cover
-    from typing import TypeVar
-else:  # pragma: <3.13 cover
-    from typing_extensions import TypeVar
-
-if sys.version_info >= (3, 12):  # pragma: >=3.12 cover
-    from types import get_original_bases
-else:  # pragma: <3.12 cover
-    from typing_extensions import get_original_bases
+from ._helpers import resolve_annotation
+from ._typing_compat import TypeVar, get_original_bases
 
 
 __all__ = (
@@ -51,7 +42,7 @@ __all__ = (
     "UnknownUnionKey",
     "MissingTypeName",
     "NoExtraKeysAllowed",
-    # Utilities
+    # NoDefault
     "NoDefault",
     "NODEFAULT",
     # Item
@@ -87,7 +78,7 @@ _T_def = TypeVar("_T_def", default=Any)
 class SpecError(Exception):
     """Base exception class for spec."""
 
-    def __init__(self, model_name: str, message: str):
+    def __init__(self, model_name: str, message: str) -> None:
         super().__init__(message)
         self.model_name = model_name
         self.message = message
@@ -96,21 +87,21 @@ class SpecError(Exception):
 class MissingArgument(SpecError):
     """Exception that's raised when a Model is instantiated with no arguments."""
 
-    def __init__(self, model_name: str):
+    def __init__(self, model_name: str) -> None:
         super().__init__(model_name, "No data or kwargs passed to Model.")
 
 
 class MissingRequiredKey(SpecError):
     """Exception that's raised when a Model is instantiated without a required key."""
 
-    def __init__(self, model_name: str, key: str):
+    def __init__(self, model_name: str, key: str) -> None:
         super().__init__(model_name, f"Missing required key '{model_name}.{key}'.")
 
 
 class InvalidType(SpecError):
     """Exception that's raised when the type for a given value doesn't match the expected type from the Model."""
 
-    def __init__(self, model_name: str, key: str, expected: str, typ: str):
+    def __init__(self, model_name: str, key: str, expected: str, typ: str) -> None:
         super().__init__(model_name, f"'{model_name}.{key}' expected type '{expected}' but found '{typ}'.")
         self.key = key
         self.expected = expected
@@ -130,7 +121,7 @@ class InvalidType(SpecError):
 class FailedValidationHook(SpecError):
     """Exception that's raised when a validation hook for an item in a model fails."""
 
-    def __init__(self, model_name: str, key: str):
+    def __init__(self, model_name: str, key: str) -> None:
         super().__init__(model_name, f"'{model_name}.{key}' failed validation.")
         self.key = key
 
@@ -138,7 +129,7 @@ class FailedValidationHook(SpecError):
 class UnknownUnionKey(SpecError):
     """Exception that's raised when the provided tag for a tagged union model doesn't work to find any sub-models."""
 
-    def __init__(self, model_name: str, key: str):
+    def __init__(self, model_name: str, key: str) -> None:
         super().__init__(model_name, f"Unknown key found `{key}`.")
         self.key = key
 
@@ -146,7 +137,7 @@ class UnknownUnionKey(SpecError):
 class MissingTypeName(SpecError):
     """Exception that's raised when a tagged union model is missing a type name."""
 
-    def __init__(self, model_name: str, key: str, typ: str):
+    def __init__(self, model_name: str, key: str, typ: str) -> None:
         super().__init__(model_name, f"'{model_name}.{key}' union type is missing a type name for '{typ}'.")
         self.key = key
         self.typ = typ
@@ -155,7 +146,7 @@ class MissingTypeName(SpecError):
 class NoExtraKeysAllowed(SpecError):
     """Exception that's raised when a model prohibits extra keys, but they're provided anyway."""
 
-    def __init__(self, model_name: str, extra_keys: Iterable[str], allowed_keys: Iterable[str]):
+    def __init__(self, model_name: str, extra_keys: Iterable[str], allowed_keys: Iterable[str]) -> None:
         super().__init__(model_name, f"No extra keys are allowed in this model. Extra(s) found: {extra_keys}.")
         self.extra_keys = extra_keys
         self.allowed_keys = allowed_keys
@@ -202,7 +193,7 @@ MISSING = Missing.MISSING
 
 
 class NoDefault(enum.Enum):
-    """Type of spec.NODEFAULT singleton. Meant to be used in annotations."""
+    """Type of `spec.NODEFAULT` singleton. Meant to be used in annotations."""
 
     NODEFAULT = 0
 
@@ -310,7 +301,7 @@ class _InternalItem(Generic[_T_def]):
         tag: Literal["untagged", "external", "internal", "adjacent"],
         tag_info: dict[str, Any],
         type_name: str | None,
-    ):
+    ) -> None:
         self.key: str = key
         self.rename: str | None = rename
         self.typ: type[_T_def] = typ
@@ -326,7 +317,7 @@ class _InternalItem(Generic[_T_def]):
     def actual_key(self) -> str:
         return self.rename or self.key
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"{type(self).__name__}({', '.join(f'{name}={getattr(self, name)!r}' for name in type(self).__slots__)})"
 
 
@@ -363,7 +354,7 @@ class Item(Generic[_T_def]):
         tag: Literal["untagged", "external", "internal", "adjacent"] = "untagged",
         tag_info: dict[str, Any] | Literal[MISSING] = MISSING,
         type_name: str | None = None,
-    ):
+    ) -> None:
         self._key: str | None = key
         self._rename: str | None = rename
         self._typ: type[_T_def] | None = typ
@@ -376,7 +367,7 @@ class Item(Generic[_T_def]):
         self._tag_info: dict[str, Any] = tag_info if tag_info is not MISSING else {}
         self._type_name: str | None = type_name
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"{type(self).__name__}({', '.join(f'{name}={getattr(self, name)!r}' for name in type(self).__slots__)})"
 
     def _to_internal(self) -> _InternalItem[_T_def]:
@@ -803,7 +794,7 @@ class Model:
         type_name: str | None = None,
         rename: RenameScheme = to_default,
         allow_extras: bool | OnExtrasCallback = True,
-    ):
+    ) -> None:
         try:
             rename_scheme = _BUILTIN_RENAME_SCHEMES[rename]  # pyright: ignore [reportArgumentType]
         except KeyError:
@@ -823,6 +814,7 @@ class Model:
         if isinstance(allow_extras, bool):
             cls._spec_model_extras_policy = allow_extras
         else:
+            # Prevent binding when invoked from class or instance.
             cls._spec_model_extras_policy = staticmethod(allow_extras)
 
         items: dict[str, _InternalItem] = {}
@@ -891,13 +883,13 @@ class Model:
 
                 setattr(self, item.key, new_value)
 
-    def __eq__(self, other: object):
+    def __eq__(self, other: object) -> bool:
         if not isinstance(other, type(self)):
             return NotImplemented
 
         return self.to_dict() == other.to_dict()
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         items = [f"{item.key}={getattr(self, item.key, MISSING)!r}" for item in self._spec_model_items.values()]
         return f"<{type(self).__name__} {' '.join(items)}>"
 
@@ -914,14 +906,14 @@ class Model:
 class TransparentModel(Generic[_T], Model):
     value: _T
 
-    def __init_subclass__(cls, *, item: Item | None = None):
+    def __init_subclass__(cls, *, item: Item | None = None) -> None:
         typ = get_args(get_original_bases(cls)[0])[0]
         cls._spec_model_items = {"value": convert_to_item(cls, "value", typ, item)._to_internal()}
 
-    def __init__(self, data: object):
+    def __init__(self, data: object) -> None:
         super().__init__({"value": data})
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"<{type(self).__name__} {self.value!r}>"
 
     def to_dict(self) -> dict[str, Any]:
@@ -929,6 +921,14 @@ class TransparentModel(Generic[_T], Model):
 
 
 def transparent(typ: type[_T] | Any, item: Item | None = None) -> type[TransparentModel[_T]]:
+    """Create a transparent model class with the type and item as inputs.
+
+    Equivalent to::
+
+        class MyModel(TransparentModel[typ], item=item):
+            ...
+    """
+
     if get_origin(typ) in {Union, types.UnionType}:
         name = "Or".join([_get_type_name(t) for t in get_args(typ)])
     else:

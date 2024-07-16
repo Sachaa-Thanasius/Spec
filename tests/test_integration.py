@@ -3,7 +3,6 @@
 This is purely for the sake of emulating a real-world use case. Some code is copied from pre-commit/clientlib.py,
 and the schema comes from there as well. All rights to Anthony Sottile for those.
 """
-# ruff: noqa: T201, T203
 
 import re
 import shlex
@@ -14,6 +13,7 @@ import pytest
 
 import spec
 from spec import NoDefault
+
 
 # region Constants
 # ----------------------------------------------------------------------------------------------------------------------
@@ -161,8 +161,6 @@ class ManifestHook(spec.Model):
     verbose: bool = False
 
 
-# -- Meta hook constraints.
-
 _lang_meta_constraint = "system"
 
 _name_cha_meta_constraint = "check-hooks-apply"
@@ -175,23 +173,23 @@ _name_id_meta_constraint = "identity"
 _entry_id_meta_constraint = meta_entry("identity")
 
 
-class BaseMetaHook(ManifestHook):
+class _BaseMetaHook(ManifestHook):
     language: Annotated[str, spec.validate(_lang_meta_constraint.__eq__)] = _lang_meta_constraint
 
 
-class CheckHooksApplyMetaHook(BaseMetaHook):
+class CheckHooksApplyMetaHook(_BaseMetaHook):
     name: Annotated[str, spec.validate(_name_cha_meta_constraint.__eq__)] = _name_cha_meta_constraint
     files: Annotated[str, spec.validate(CONFIG_FILE_REGEX.__eq__)] = CONFIG_FILE_REGEX
     entry: Annotated[str, spec.validate(_entry_cha_meta_constraint.__eq__)] = _entry_cha_meta_constraint
 
 
-class CheckUselessExcludesMetaHook(BaseMetaHook):
+class CheckUselessExcludesMetaHook(_BaseMetaHook):
     name: Annotated[str, spec.validate(_name_cue_meta_constraint.__eq__)] = _name_cue_meta_constraint
     files: Annotated[str, spec.validate(CONFIG_FILE_REGEX.__eq__)] = CONFIG_FILE_REGEX
     entry: Annotated[str, spec.validate(_entry_cue_meta_constraint.__eq__)] = _entry_cue_meta_constraint
 
 
-class IdentityMetaHook(BaseMetaHook):
+class IdentityMetaHook(_BaseMetaHook):
     name: Annotated[str, spec.validate(_name_id_meta_constraint.__eq__)] = _name_id_meta_constraint
     verbose: bool = True
     entry: Annotated[str, spec.validate(_entry_id_meta_constraint.__eq__)] = _entry_id_meta_constraint
@@ -206,7 +204,7 @@ class ConfigHook(ManifestHook):
     # optional and without defaults.
     # FIXME: Breaks Liskov, hence the pyright: ignores, but this isn't meant to be normal class inheritance anyway.
     # Might be worth not inheriting from ManifestHook and just keeping a note to stay in sync. Then again, that would be
-    # another case with with multiple sources of truth that need to be assessed and possibly changed together when
+    # another case with multiple sources of truth that need to be assessed and possibly changed together when
     # needed.
     minimum_pre_commit_version: Annotated[str | NoDefault, spec.validate(is_le_max_version)]  # pyright: ignore
     name: str | NoDefault  # pyright: ignore
@@ -248,12 +246,9 @@ class LocalHook(ManifestHook):
 def warn_if_mutable_rev(rev: str) -> str:
     if "." not in rev and not re.match(r"^[a-fA-F0-9]+$", rev):
         print(
-            "Some field in some repo "
-            "appears to be a mutable reference "
-            "(moving tag / branch).  Mutable references are never "
-            "updated after first install and are not supported. "
-            "See https://pre-commit.com/#using-the-latest-version-for-a-repository "
-            "for more details. "
+            "Some field in some repo appears to be a mutable reference (moving tag / branch). "
+            "Mutable references are never updated after first install and are not supported. "
+            "See https://pre-commit.com/#using-the-latest-version-for-a-repository for more details. "
             "Hint: `pre-commit autoupdate` often fixes this.",
         )
     return rev

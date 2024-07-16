@@ -6,7 +6,7 @@ import typing
 import pytest
 
 from spec import Item, _generate_data_type_repr, _prettify_item_type
-from spec._typing_helpers import resolve_annotation
+from spec._helpers import resolve_annotation
 
 
 @pytest.mark.parametrize(
